@@ -71,4 +71,6 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // ML Kit OCR
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
 }
