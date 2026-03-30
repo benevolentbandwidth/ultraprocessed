@@ -1,5 +1,6 @@
 package com.b2.ultraprocessed.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.b2.ultraprocessed.ocr.OcrEngine
 import com.b2.ultraprocessed.ui.theme.DarkBg
 
 data class AppTimingConfig(
@@ -34,6 +36,7 @@ fun UltraProcessedApp(
     }
     var currentResultIndex by rememberSaveable { mutableIntStateOf(0) }
     var lastCapturedPhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastOcrText by rememberSaveable { mutableStateOf<String?>(null) }
     val historyItems = remember {
         mutableStateListOf<HistoryItemUi>().apply {
             addAll(StubUiData.initialHistory())
@@ -60,10 +63,22 @@ fun UltraProcessedApp(
                     enableLiveCamera = enableLiveCamera,
                     onScan = { path ->
                         lastCapturedPhotoPath = path
+                        // Run real OCR on the captured image
+                        val bitmap = BitmapFactory.decodeFile(path)
+                        if (bitmap != null) {
+                            OcrEngine.extractText(bitmap) { result ->
+                                lastOcrText = if (result.success) {
+                                    result.normalizedText
+                                } else {
+                                    result.errorMessage
+                                }
+                            }
+                        }
                         destination = AppDestination.Analyzing
                     },
                     onTryDemo = {
                         lastCapturedPhotoPath = null
+                        lastOcrText = null
                         destination = AppDestination.Analyzing
                     },
                     onSettings = { destination = AppDestination.Settings },
@@ -79,6 +94,7 @@ fun UltraProcessedApp(
                     onComplete = {
                         val result =
                             StubUiData.results[currentResultIndex % StubUiData.results.size]
+                        val ocrSummary = lastOcrText
                         historyItems.add(
                             0,
                             HistoryItemUi(
@@ -86,7 +102,9 @@ fun UltraProcessedApp(
                                 productName = result.productName,
                                 novaGroup = result.novaGroup,
                                 scannedAt = "Just now",
-                                summary = if (lastCapturedPhotoPath != null) {
+                                summary = if (ocrSummary != null) {
+                                    "Ingredients: $ocrSummary"
+                                } else if (lastCapturedPhotoPath != null) {
                                     "${result.summary} Captured image stored locally."
                                 } else {
                                     result.summary
