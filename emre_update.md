@@ -1,6 +1,8 @@
 # Emre update: end-to-end label scan to NOVA-style classification
 
-This document describes the work that connects **camera or gallery images** (and a **demo text path**) to **on-device OCR**, **ingredient normalization**, **rules-based NOVA-style classification**, and the **Compose UI**. It is meant as a handoff for contributors and reviewers.
+This document describes the work that connects **camera or gallery images**, **bundled demo sample images** (and an optional **raw demo text** API used by tests or future UI), to **on-device OCR**, **ingredient normalization**, **rules-based NOVA-style classification**, and the **Compose UI**. It is meant as a handoff for contributors and reviewers.
+
+**Last reviewed:** 2026-03-30 (aligned with repo: demo picker + `analyzeDemoAsset` path).
 
 ---
 
@@ -15,6 +17,7 @@ This document describes the work that connects **camera or gallery images** (and
 | `IngredientInput` → `ClassifierOrchestrator` (local-only: no network) | Done |
 | Marker-based `RulesClassifier` (0 / 1 / 2+ markers + processed heuristic) | Done |
 | Replace timed stub analysis with real work in `AnalyzingScreen` | Done |
+| Demo: `DemoSamplePickerDialog` + `assets/demo_samples/` → `analyzeDemoAsset` → OCR | Done |
 | User-visible error when text is too short after OCR | Done |
 | Unit tests + fixture samples for expected NOVA groups | Done |
 | Gradle: ML Kit + `kotlinx-coroutines-play-services` | Done |
@@ -29,7 +32,7 @@ This document describes the work that connects **camera or gallery images** (and
 flowchart LR
     subgraph Input
         A[Camera capture or gallery]
-        B[Try Demo button]
+        B[Try Demo → pick bundled sample]
     end
     subgraph App
         S[Scanner screen]
@@ -39,7 +42,7 @@ flowchart LR
     end
     A --> S
     B --> S
-    S -->|path or demo text| Z
+    S -->|image path or demo asset| Z
     Z -->|success| R
     Z -->|OCR fail / too little text| E
     E -->|Try again| S
@@ -61,9 +64,11 @@ flowchart TB
         OCR -->|Success: rawText| NORM
         OCR -->|Failure| ERR[Result.failure → UI error]
     end
-    subgraph DemoPath["Demo path"]
-        D[Fixed demo string in UltraProcessedApp]
-        D --> NORM
+    subgraph DemoPath["Demo paths"]
+        DA[Bundled asset → cache file path]
+        DT[Raw demo text optional — analyzeDemoText]
+        DA --> OCR
+        DT --> NORM
     end
     NORM[IngredientTextNormalizer.normalize]
     NORM --> LEN{normalized.length ≥ 12?}
@@ -84,6 +89,7 @@ flowchart TB
 flowchart TB
     subgraph ui["ui"]
         UPA[UltraProcessedApp]
+        DSP[DemoSamplePickerDialog]
         AN[AnalyzingScreen]
         RS[ResultsScreen]
         AES[AnalysisErrorScreen]
@@ -105,6 +111,7 @@ flowchart TB
         API[ApiLLMClassifier — not wired]
         ODL[OnDeviceLLMClassifier — not wired]
     end
+    UPA --> DSP
     UPA --> AN
     AN --> LSP
     LSP --> OP
@@ -187,7 +194,10 @@ stateDiagram-v2
 `UltraProcessedApp` holds:
 
 - `scanSessionId` (re-triggers `LaunchedEffect` on `AnalyzingScreen`)
-- `lastCapturedPhotoPath`, `demoIngredientText` (mutually exclusive for a given run)
+- `lastCapturedPhotoPath` vs `demoAssetPath` (mutually exclusive for a given run; camera/gallery vs **Try Demo** sample)
+- optional `demoRawIngredientText` for `AnalyzingScreen` (wired for `analyzeDemoText`; currently passed as `null` from the main app)
+- `showDemoPicker` to present `DemoSamplePickerDialog` on the scanner
+- `AppTimingConfig.analysisMinimumDisplayMillis` so the analyzing screen stays readable when the pipeline finishes quickly (e.g. demo text)
 - `currentScanResult` for `ResultsScreen`
 - `analysisErrorMessage` for `AnalysisErrorScreen`
 - in-memory `historyItems` (still not Room-backed)
@@ -202,14 +212,17 @@ stateDiagram-v2
 | `app/.../ocr/OcrPipeline.kt` | OCR interface |
 | `app/.../ocr/MlKitOcrPipeline.kt` | ML Kit implementation |
 | `app/.../ingredients/IngredientTextNormalizer.kt` | Text cleanup |
-| `app/.../scan/LabelScanPipeline.kt` | Orchestrates OCR + normalize + orchestrator + mapper |
+| `app/.../scan/LabelScanPipeline.kt` | `analyzeImage`, `analyzeDemoAsset` (asset → cache → OCR), `analyzeDemoText` |
 | `app/.../ui/ClassificationUiMapper.kt` | `ClassificationResult` → `ScanResultUi` |
 | `app/.../ui/AnalysisErrorScreen.kt` | Error UX |
 | `app/.../ui/UltraProcessedApp.kt` | Wires navigation and callbacks |
-| `app/.../ui/AnalyzingScreen.kt` | Runs pipeline in `LaunchedEffect` |
+| `app/.../ui/DemoSamplePickerDialog.kt` | **Try Demo** sample chooser |
+| `app/.../ui/DemoImageSamples.kt` | Built-in demo metadata + `assets/demo_samples/` paths |
+| `app/.../ui/AnalyzingScreen.kt` | Runs pipeline in `LaunchedEffect` (`analyzeImage` / `analyzeDemoAsset` / `analyzeDemoText`) |
 | `app/.../ui/AppModels.kt` | `ScanResultUi`, destinations, stubs |
 | `app/.../classify/RulesClassifier.kt` | Marker scoring + explanations |
 | `app/.../classify/ClassifierOrchestrator.kt` | Unchanged contract; used with `null` API/on-device |
+| `app/src/main/assets/demo_samples/*.png` | Bundled images for **Try Demo** |
 | `app/build.gradle.kts` | ML Kit + coroutines Play Services |
 | `app/src/test/.../NovaIngredientSampleFixturesTest.kt` | Four canonical ingredient strings |
 | `app/src/test/.../IngredientTextNormalizerTest.kt` | Normalizer tests |
@@ -231,7 +244,7 @@ OCR uses `InputImage.fromFilePath(context, Uri.fromFile(file))` because the ML K
 ## 10. How to verify quickly
 
 1. **Unit tests:** `./gradlew :app:testDebugUnitTest`
-2. **App:** Run on device/emulator → **Try Demo** → expect a real **NOVA 1**-style result for oats/dates/almonds.
+2. **App:** Run on device/emulator → **Try Demo** → pick a sample (e.g. multigrain bread vs cheeseburger) → results follow OCR + rules on real label text from the image.
 3. **Camera/gallery:** Capture a label with readable English ingredients → results should reflect rules + OCR quality.
 
 ---
@@ -239,8 +252,8 @@ OCR uses `InputImage.fromFilePath(context, Uri.fromFile(file))` because the ML K
 ## 11. Related project docs
 
 - `README.md` — contributor runbook (some stack lines still mention Room/OkHttp as planned; this update completes the OCR → rules path only).
-- `change.md` — day-to-day change log; you can add a short pointer to this file after merges if you want traceability.
+- `change.md` — day-to-day change log; add entries when demo UX or pipeline behavior changes, and optionally point readers here for architecture detail.
 
 ---
 
-*Document version: aligned with the end-to-end OCR + rules classification integration.*
+*Document version: 2026-03-30 — OCR + rules integration; demo flow uses bundled sample images and `LabelScanPipeline.analyzeDemoAsset`.*
