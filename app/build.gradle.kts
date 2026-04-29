@@ -101,6 +101,11 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+<<<<<<< HEAD
+    testImplementation("junit:junit:4.13.2")
+    // ML Kit OCR
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
+=======
     // Room
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
@@ -111,4 +116,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 // Security Crypto (Keystore)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+>>>>>>> origin/main
 }
