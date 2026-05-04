@@ -57,6 +57,10 @@ class AppChromeFunctionalTest {
                     result = sampleScanResult,
                     onScanAgain = {},
                     onOpenHistory = {},
+                    chatEnabled = false,
+                    onAskAboutResult = { _, _ ->
+                        Result.failure(IllegalStateException("Chat is disabled in this test."))
+                    },
                 )
             }
         }
