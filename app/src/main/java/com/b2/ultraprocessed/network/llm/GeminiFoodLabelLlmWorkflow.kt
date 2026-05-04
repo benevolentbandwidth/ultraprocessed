@@ -138,8 +138,8 @@ class GeminiFoodLabelLlmWorkflow(
             .put(
                 "generationConfig",
                 JSONObject()
-                    .put("temperature", 0.1)
-                    .put("topP", 0.9)
+                    .put("temperature", 0.0)
+                    .put("topP", 1.0)
                     .put("maxOutputTokens", 1800)
                     .put("responseMimeType", "application/json"),
             )

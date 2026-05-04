@@ -194,8 +194,8 @@ class GeminiResultChatWorkflow(
             .put(
                 "generationConfig",
                 JSONObject()
-                    .put("temperature", 0.2)
-                    .put("topP", 0.9)
+                    .put("temperature", 0.0)
+                    .put("topP", 1.0)
                     .put("maxOutputTokens", 900)
                     .put("responseMimeType", "application/json"),
             )
@@ -361,7 +361,10 @@ class OpenAiCompatibleResultChatWorkflow(
                     .put(JSONObject().put("role", "system").put("content", prompt.trim()))
                     .put(JSONObject().put("role", "user").put("content", text.trim())),
             )
-            .put("temperature", 0.2)
+            .put("temperature", 0.0)
+            .put("top_p", 1.0)
+            .put("frequency_penalty", 0.0)
+            .put("presence_penalty", 0.0)
             .put("response_format", JSONObject().put("type", "json_object"))
         return root.toString().toRequestBody(JSON_MEDIA_TYPE)
     }

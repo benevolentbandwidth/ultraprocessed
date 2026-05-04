@@ -121,7 +121,10 @@ class OpenAiCompatibleFoodLabelLlmWorkflow(
                         .put("content", text),
                 ),
             )
-            .put("temperature", 0.1)
+            .put("temperature", 0.0)
+            .put("top_p", 1.0)
+            .put("frequency_penalty", 0.0)
+            .put("presence_penalty", 0.0)
             .put("response_format", JSONObject().put("type", "json_object"))
         return root.toString().toRequestBody(JSON_MEDIA_TYPE)
     }
