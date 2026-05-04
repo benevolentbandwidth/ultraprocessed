@@ -27,7 +27,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.b2.ultraprocessed.ui.theme.SpaceGroteskFontFamily
 
 data class AppHeaderAction(
     val icon: ImageVector,
@@ -65,7 +65,7 @@ fun AppHeader(
                 Spacer(modifier = Modifier.width(10.dp))
             }
 
-            AppBrandMark(sizeDp = 40, fontSizeSp = 16)
+            AppBrandMark(sizeDp = 36)
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -73,7 +73,8 @@ fun AppHeader(
                 Text(
                     text = title,
                     color = Color.White.copy(alpha = 0.94f),
-                    fontSize = 18.sp,
+                    fontFamily = SpaceGroteskFontFamily,
+                    fontSize = UiTextSizes.ScreenTitle,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -82,7 +83,8 @@ fun AppHeader(
                     Text(
                         text = subtitle,
                         color = Color.White.copy(alpha = 0.48f),
-                        fontSize = 12.sp,
+                        fontFamily = SpaceGroteskFontFamily,
+                        fontSize = UiTextSizes.ScreenSubtitle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

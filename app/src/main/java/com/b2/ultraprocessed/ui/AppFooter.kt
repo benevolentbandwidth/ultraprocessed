@@ -36,8 +36,8 @@ fun AppFooter(
             text = stringResource(R.string.footer_copyright),
             modifier = Modifier.widthIn(max = 320.dp),
             color = Color.White.copy(alpha = 0.15f),
-            fontSize = 9.sp,
-            lineHeight = 13.sp,
+            fontSize = UiTextSizes.Caption,
+            lineHeight = 12.sp,
             textAlign = TextAlign.Center,
         )
         Spacer(modifier = Modifier.height(4.dp))
@@ -45,7 +45,7 @@ fun AppFooter(
             Text(
                 text = "${stringResource(R.string.footer_built_with)} ",
                 color = Color.White.copy(alpha = 0.16f),
-                fontSize = 9.sp,
+                fontSize = UiTextSizes.Caption,
             )
             Icon(
                 imageVector = Icons.Default.Favorite,
@@ -56,7 +56,7 @@ fun AppFooter(
             Text(
                 text = " ${stringResource(R.string.footer_humanity)}",
                 color = Color.White.copy(alpha = 0.16f),
-                fontSize = 9.sp,
+                fontSize = UiTextSizes.Caption,
             )
         }
     }

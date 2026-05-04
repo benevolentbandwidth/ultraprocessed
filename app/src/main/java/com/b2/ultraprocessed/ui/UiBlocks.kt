@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.b2.ultraprocessed.ui.theme.Emerald400
 import com.b2.ultraprocessed.ui.theme.Emerald500
+import com.b2.ultraprocessed.ui.theme.SpaceGroteskFontFamily
 
 private val UiSectionShape = RoundedCornerShape(18.dp)
 
@@ -58,7 +59,8 @@ fun UiSectionHeader(
         Text(
             text = text,
             color = Color.White.copy(alpha = 0.42f),
-            fontSize = 12.sp,
+            fontFamily = SpaceGroteskFontFamily,
+            fontSize = UiTextSizes.SectionHeader,
             letterSpacing = 0.4.sp,
         )
     }
@@ -82,14 +84,15 @@ fun UiInfoCard(
             Text(
                 text = title,
                 color = accentColor.copy(alpha = 0.72f),
-                fontSize = 12.sp,
+                fontFamily = SpaceGroteskFontFamily,
+                fontSize = UiTextSizes.BodySmall,
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = body,
                 color = Color.White.copy(alpha = 0.34f),
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
+                fontSize = UiTextSizes.BodySmall,
+                lineHeight = 16.sp,
             )
             if (chipLabels.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -103,7 +106,7 @@ fun UiInfoCard(
                             Text(
                                 text = label,
                                 color = Color.White.copy(alpha = 0.8f),
-                                fontSize = 11.sp,
+                                fontSize = UiTextSizes.Chip,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             )
                         }
@@ -124,12 +127,12 @@ fun UiMetaLine(
         Text(
             text = "$label ",
             color = Color.White.copy(alpha = 0.42f),
-            fontSize = 12.sp,
+            fontSize = UiTextSizes.BodySmall,
         )
         Text(
             text = value,
             color = Color.White.copy(alpha = 0.72f),
-            fontSize = 12.sp,
+            fontSize = UiTextSizes.BodySmall,
         )
     }
 }
@@ -150,13 +153,14 @@ fun UiMetricPill(
             Text(
                 text = label,
                 color = Color.White.copy(alpha = 0.34f),
-                fontSize = 11.sp,
+                fontSize = UiTextSizes.Caption,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = value,
                 color = Color.White.copy(alpha = 0.92f),
-                fontSize = 18.sp,
+                fontFamily = SpaceGroteskFontFamily,
+                fontSize = UiTextSizes.MetricValue,
             )
         }
     }

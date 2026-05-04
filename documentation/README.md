@@ -2,8 +2,11 @@
 
 This folder is the handoff surface for Zest. Each document explains one production area with concrete contracts, data flow, and implementation boundaries so a new engineer can work without reading the whole codebase first.
 
+If you are not an Android developer, start with [00-android-app-guide.md](00-android-app-guide.md). It explains the project with diagrams, file maps, and plain-language Android concepts.
+
 ## Document Map
 
+- [00-android-app-guide.md](00-android-app-guide.md) - visual non-Android guide to how this Android app works and where to make changes.
 - [01-architecture.md](01-architecture.md) - system shape, runtime layers, and cross-cutting constraints.
 - [02-ui-navigation.md](02-ui-navigation.md) - Compose shell, destination ownership, and screen responsibilities.
 - [03-camera-ocr-barcode.md](03-camera-ocr-barcode.md) - capture, gallery import, OCR, and barcode routing.
@@ -17,7 +20,9 @@ This folder is the handoff surface for Zest. Each document explains one producti
 
 ```mermaid
 flowchart TB
-    Capture[Camera / Gallery / Barcode] --> Pipeline[FoodAnalysisPipeline]
+    Launch[System splash + Compose splash] --> Scanner[ScannerScreen]
+    Scanner --> Capture[Camera / Gallery / Barcode]
+    Capture --> Pipeline[FoodAnalysisPipeline]
     Pipeline --> Extract[Ingredient extraction]
     Extract --> Classify[NOVA classification]
     Extract --> Allergens[Allergen detection]
@@ -27,6 +32,7 @@ flowchart TB
     Chat --> UI
     UI --> Room[Room history]
     UI --> Secrets[Encrypted secrets]
+    UI --> Prefs[Sound preferences]
     USDA[USDA lookup] --> Pipeline
 ```
 
@@ -83,13 +89,17 @@ flowchart TB
 - Ingredient bubbles are driven by atomic ingredient items and per-item NOVA groups.
 - Allergens have a separate UI block and a separate API contract.
 - Invalid images stop at extraction with `code = -1`.
+- Typography, spacing, and brand usage should come from shared UI files rather than one-off screen overrides.
+- Usage totals in history are estimates derived by the app unless the provider contract is extended to return exact usage metadata.
 
 ## Reading Order For A New Engineer
 
-1. Read [01-architecture.md](01-architecture.md).
-2. Read [04-classification-analysis.md](04-classification-analysis.md).
-3. Read [06-storage-security.md](06-storage-security.md).
-4. Read [07-testing-release.md](07-testing-release.md).
+1. Read [00-android-app-guide.md](00-android-app-guide.md).
+2. Read [01-architecture.md](01-architecture.md).
+3. Read [02-ui-navigation.md](02-ui-navigation.md).
+4. Read [04-classification-analysis.md](04-classification-analysis.md).
+5. Read [06-storage-security.md](06-storage-security.md).
+6. Read [07-testing-release.md](07-testing-release.md).
 
 ## What To Avoid
 
@@ -97,3 +107,4 @@ flowchart TB
 - Do not put secret values in `BuildConfig`, Compose state, or repo text files.
 - Do not merge allergens into ingredient coloring.
 - Do not return long clause-like items in ingredient arrays.
+- Do not bypass `verifySourceTreeForBuild`; it protects release builds and KSP from known bad source states.

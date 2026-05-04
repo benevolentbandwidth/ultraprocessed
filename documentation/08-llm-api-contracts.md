@@ -9,6 +9,8 @@ This document is the source of truth for every model call in Zest. It covers:
 
 The runtime is API-only for analysis, classification, allergen detection, and result chat. The app does not use rule-based classification as a production fallback.
 
+Usage and cost values shown in History are currently app estimates. If an LLM provider response includes reliable usage metadata in the future, the provider workflow should map that data into the same Room fields and this document should be updated with the exact provider-specific source.
+
 ## Files
 
 - `network/llm/FoodLabelLlmWorkflow.kt`
@@ -17,7 +19,7 @@ The runtime is API-only for analysis, classification, allergen detection, and re
 - `network/llm/ResultChatWorkflow.kt`
 - `network/llm/LlmContractRetry.kt`
 - `network/llm/MultiProviderFoodLabelLlmWorkflow.kt`
-- `network/llm/ResultChatWorkflowFactory.kt`
+- `network/llm/ResultChatWorkflow.kt`
 - `assets/prompts/food_label_ingredient_extraction_prompt.md`
 - `assets/prompts/food_label_classification_prompt.md`
 - `assets/prompts/food_label_allergen_prompt.md`
@@ -324,3 +326,10 @@ Then ensure:
 ## Operational Rule
 
 If a payload cannot be parsed or validated, the user should see a clean analysis failure state or a retry/fallback message, not the raw model error text.
+
+## UI Contract Notes
+
+- Ingredient chip text should come from atomic ingredient names only.
+- Allergen strings should be atomic allergen names only.
+- Result chat is labeled as chat about the current scan and should stay scoped to that scan.
+- History cost and token rows should label estimated values honestly until exact provider usage metadata is persisted.

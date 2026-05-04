@@ -37,6 +37,9 @@
     <string name="results_chat_locked_notice">Ask only about this scan. The assistant is locked to the current result and refuses unrelated or injected instructions.</string>
 
     <!-- Settings -->
+    <string name="settings_ping_api">Ping API</string>
+    <string name="settings_key_stored">Key stored</string>
+    <string name="settings_key_not_stored">No key stored</string>
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Zest</string>
     <string name="settings_llm_key_section">LLM API key</string>
@@ -53,21 +56,27 @@
     <string name="settings_feature_history">Local scan history &amp; cached results</string>
     <string name="settings_feature_security">Encrypted API key storage</string>
     <string name="settings_feature_network">Direct HTTPS calls to model APIs</string>
+    <string name="settings_sound_title">Sound feedback</string>
+    <string name="settings_sound_body">Play subtle cues for scan actions, successful analysis, and errors.</string>
+    <string name="settings_sound_enabled">Sound effects enabled</string>
     <string name="settings_privacy_title">Privacy-first design</string>
     <string name="settings_privacy_body">No sign-in required. When an LLM key is saved, label images are sent for ingredient extraction and extracted ingredient text is sent for classification and allergen detection. Scan history stays in local Room DB. API keys are encrypted via Android Keystore. DataStore handles preferences.</string>
     <string name="settings_api_metadata">API metadata</string>
 
     <!-- History -->
-    <string name="history_title">History</string>
+    <string name="history_title">Scan History</string>
     <string name="history_subtitle">Zest</string>
     <string name="history_local_only_title">Stored locally</string>
-    <string name="history_local_only_notice">Stored locally via Room DB · No cloud sync</string>
+    <string name="history_local_only_notice">Stored locally via Room DB · Session only · No cloud sync</string>
     <string name="history_local_only_body">Room DB keeps scan history on device. Nothing is synced to a cloud account.</string>
     <string name="history_empty_state">No scans yet. Scan or upload an ingredient label to build local history.</string>
+    <string name="history_empty_title">No scans yet</string>
+    <string name="history_empty_body">Scan or upload an ingredient label to build your local history.</string>
     <string name="history_usage_snapshot">Usage snapshot</string>
     <string name="history_usage_subtitle">%1$d scans · estimated from stored model usage</string>
     <string name="history_tokens_label">Tokens</string>
-    <string name="history_estimated_cost_label">Estimated cost</string>
+    <string name="history_estimated_cost_label">Cost</string>
+    <string name="history_scans_label">Scans</string>
     <string name="history_model_scans">%1$d scan%2$s · %3$s tokens · %4$s</string>
 
     <!-- Analysis -->
@@ -79,17 +88,21 @@
     <string name="analysis_rate_limit_chip_usage">Check API usage</string>
     <string name="analysis_try_again">Try again</string>
     <string name="analysis_api_key_missing">Add an LLM API key in Settings for image extraction, NOVA classification, and allergen detection.</string>
+    <string name="analysis_usda_key_unavailable">USDA data feed not available — barcode product lookup is disabled.</string>
     <string name="analysis_camera_permission_needed">Camera access needed</string>
     <string name="analysis_scanner_disabled">Scanner preview disabled</string>
     <string name="analysis_enable_camera">Enable Camera</string>
-    <string name="analysis_aim_label">AIM AT THE INGREDIENT LABEL</string>
-    <string name="analysis_aim_barcode">AIM AT THE PRODUCT BARCODE</string>
-    <string name="analysis_label_ready">CameraX Preview · label analysis ready</string>
-    <string name="analysis_front_label_ready">Front camera · label analysis ready</string>
+    <string name="analysis_aim_label">Point camera at the ingredient label</string>
+    <string name="analysis_aim_barcode">Point camera at the barcode</string>
+    <string name="analysis_label_ready">Point the ingredient list in the box</string>
+    <string name="analysis_front_label_ready">Point the ingredient list in the box</string>
     <string name="analysis_barcode_ready">Live barcode · USDA product lookup</string>
-    <string name="analysis_front_barcode_ready">Front camera · live barcode</string>
+    <string name="analysis_front_barcode_ready">Align the barcode in the box</string>
     <string name="scanner_live_subtitle">Live scanner</string>
     <string name="scanner_barcode_subtitle">Barcode scanner</string>
+    <string name="scanner_home_title">Zest</string>
+    <string name="scanner_home_subtitle">Healthier Picks</string>
+    <string name="scanner_missing_key_banner">Add your API key in Settings to enable live scanning</string>
     <string name="scanner_no_photo_selected">No photo selected.</string>
     <string name="scanner_camera_permission_required">Camera permission is required for live scanning.</string>
     <string name="scanner_camera_access_needed">Camera access needed</string>
@@ -98,14 +111,18 @@
     <string name="scanner_camera_still_starting">Camera is still starting. Try again in a moment.</string>
     <string name="scanner_enable_camera_feed">Enable camera permission to see the live feed.</string>
     <string name="scanner_preview_disabled_test_safe">Camera preview is intentionally disabled in this test-safe mode.</string>
-    <string name="scanner_front_label_ready">Front camera · label analysis ready</string>
-    <string name="scanner_back_label_ready">CameraX Preview · label analysis ready</string>
-    <string name="scanner_front_barcode_ready">Front camera · live barcode</string>
-    <string name="scanner_back_barcode_ready">Live barcode · USDA product lookup</string>
+    <string name="scanner_front_label_ready">Point the ingredient list in the box</string>
+    <string name="scanner_back_label_ready">Point the ingredient list in the box</string>
+    <string name="scanner_front_barcode_ready">Align the barcode in the box</string>
+    <string name="scanner_back_barcode_ready">Align the barcode in the box</string>
     <string name="scanner_back_to_label_scan">Back to label scan</string>
     <string name="scanner_scan_label">Scan Label</string>
     <string name="scanner_scan_barcode">Scan Barcode</string>
     <string name="scanner_upload_photo">Upload Photo</string>
+    <string name="scanner_mode_label">Ingredient Label</string>
+    <string name="scanner_mode_barcode">Barcode Scan</string>
+    <string name="scanner_mode_label_active">Ingredient label active</string>
+    <string name="scanner_mode_barcode_active">Barcode scan active</string>
     <string name="scanner_capturing">Capturing...</string>
     <string name="scanner_importing">Importing...</string>
     <string name="scanner_starting_barcode_camera">Starting barcode camera…</string>

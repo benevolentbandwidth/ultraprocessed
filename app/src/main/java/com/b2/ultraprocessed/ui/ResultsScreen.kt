@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -185,9 +187,9 @@ private fun BarcodeLookupResultBody(result: ScanResultUi) {
     Text(
         text = result.productName,
         color = Color.White.copy(alpha = 0.92f),
-        fontSize = 22.sp,
+        fontSize = UiTextSizes.ScreenTitle,
         fontWeight = FontWeight.SemiBold,
-        lineHeight = 28.sp,
+        lineHeight = 22.sp,
     )
     Spacer(modifier = Modifier.height(10.dp))
     Surface(
@@ -221,14 +223,14 @@ private fun BarcodeLookupResultBody(result: ScanResultUi) {
     Text(
         text = result.summary,
         color = Color.White.copy(alpha = 0.55f),
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
+        fontSize = UiTextSizes.Body,
+        lineHeight = 20.sp,
     )
     Spacer(modifier = Modifier.height(16.dp))
     Text(
         text = stringResource(R.string.results_image_note),
         color = Color.White.copy(alpha = 0.34f),
-        fontSize = 11.sp,
+        fontSize = UiTextSizes.Caption,
         lineHeight = 16.sp,
     )
 }
@@ -255,9 +257,9 @@ private fun FullAnalysisResultBody(
     Text(
         text = result.productName,
         color = Color.White.copy(alpha = 0.92f),
-        fontSize = 17.sp,
+        fontSize = UiTextSizes.ScreenTitle,
         fontWeight = FontWeight.SemiBold,
-        lineHeight = 24.sp,
+        lineHeight = 20.sp,
     )
     Spacer(modifier = Modifier.height(8.dp))
     Surface(
@@ -313,7 +315,7 @@ private fun FullAnalysisResultBody(
                     text = verdict.label.take(1),
                     color = verdict.textColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
+                    fontSize = UiTextSizes.Body,
                 )
             }
 
@@ -322,30 +324,30 @@ private fun FullAnalysisResultBody(
             Text(
                 text = verdict.label,
                 color = verdict.textColor,
-                fontSize = 28.sp,
+                fontSize = UiTextSizes.Display,
                 fontWeight = FontWeight.ExtraBold,
             )
             Text(
                 text = headline,
                 color = Color.White.copy(alpha = 0.72f),
-                fontSize = 14.sp,
+                fontSize = UiTextSizes.BodySmall,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
-                lineHeight = 20.sp,
+                lineHeight = 18.sp,
                 modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
             )
             Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = "NOVA ${result.novaGroup} · ${verdict.subLabel}",
                 color = Color.White.copy(alpha = 0.32f),
-                fontSize = 11.sp,
+                fontSize = UiTextSizes.Caption,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.6.sp,
             )
             Text(
                 text = "$confidenceLabel signal (${(result.confidence * 100).toInt()}%) · ${result.engineLabel}",
                 color = Color.White.copy(alpha = 0.28f),
-                fontSize = 10.sp,
+                fontSize = UiTextSizes.Caption,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp),
@@ -353,11 +355,13 @@ private fun FullAnalysisResultBody(
         }
     }
 
+    Spacer(modifier = Modifier.height(16.dp))
+
     Text(
         text = result.summary,
         color = Color.White.copy(alpha = 0.55f),
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
+        fontSize = UiTextSizes.Body,
+        lineHeight = 20.sp,
     )
 
     Spacer(modifier = Modifier.height(18.dp))
@@ -398,7 +402,7 @@ private fun FullAnalysisResultBody(
     Text(
         text = stringResource(R.string.results_footer_note),
         color = Color.White.copy(alpha = 0.34f),
-        fontSize = 11.sp,
+        fontSize = UiTextSizes.Caption,
         lineHeight = 16.sp,
     )
 }
@@ -433,8 +437,8 @@ private fun ScannedLabelPhotoSection(imagePath: String?) {
             Text(
                 text = stringResource(R.string.results_scan_note),
                 color = Color.White.copy(alpha = 0.38f),
-                fontSize = 11.sp,
-                lineHeight = 15.sp,
+                fontSize = UiTextSizes.Caption,
+                lineHeight = 13.sp,
             )
         }
     }
@@ -471,10 +475,10 @@ private fun IngredientChips(
 ) {
     if (items.isEmpty()) {
         Text(
-            text = stringResource(R.string.results_no_ingredient_nova),
-            color = Color.White.copy(alpha = 0.38f),
-            fontSize = 12.sp,
-            lineHeight = 17.sp,
+        text = stringResource(R.string.results_no_ingredient_nova),
+        color = Color.White.copy(alpha = 0.38f),
+        fontSize = UiTextSizes.BodySmall,
+        lineHeight = 16.sp,
         )
         return
     }
@@ -512,7 +516,7 @@ private fun IngredientBubble(
             Text(
                 text = item.name.toChipLabel(),
                 color = palette.text,
-                fontSize = 10.sp,
+                fontSize = UiTextSizes.Chip,
                 fontWeight = FontWeight.Medium,
                 lineHeight = 12.sp,
                 textAlign = TextAlign.Center,
@@ -541,8 +545,8 @@ private fun AllergenSection(allergens: List<String>) {
             Text(
                 text = stringResource(R.string.results_allergens_disclaimer),
                 color = Color.White.copy(alpha = 0.36f),
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
+                fontSize = UiTextSizes.Caption,
+                lineHeight = 13.sp,
             )
             Spacer(modifier = Modifier.height(12.dp))
             FlowRow(
@@ -576,7 +580,7 @@ private fun AllergenBubble(label: String) {
             Text(
                 text = label.toChipLabel(),
                 color = Color(0xFFBDE7FF),
-                fontSize = 10.sp,
+                fontSize = UiTextSizes.Chip,
                 fontWeight = FontWeight.Medium,
                 lineHeight = 12.sp,
                 textAlign = TextAlign.Center,
@@ -624,8 +628,8 @@ private fun DataWarningBlock(warnings: List<String>) {
                 Text(
                     text = warning,
                     color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
+                    fontSize = UiTextSizes.BodySmall,
+                    lineHeight = 16.sp,
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
             }
@@ -659,7 +663,7 @@ private fun ResultChatSection(
             Text(
                 text = stringResource(R.string.results_chat_section),
                 color = Color.White.copy(alpha = 0.82f),
-                fontSize = 14.sp,
+                fontSize = UiTextSizes.Body,
                 fontWeight = FontWeight.SemiBold,
             )
 
@@ -690,8 +694,8 @@ private fun ResultChatSection(
                 Text(
                     text = statusMessage.orEmpty(),
                     color = Amber400.copy(alpha = 0.9f),
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
+                    fontSize = UiTextSizes.Caption,
+                    lineHeight = 14.sp,
                 )
             }
 
@@ -820,8 +824,8 @@ private fun ChatMessageBubble(message: ResultChatMessageUi) {
             Text(
                 text = message.text,
                 color = palette.text,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
+                fontSize = UiTextSizes.BodySmall,
+                lineHeight = 15.sp,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             )
         }

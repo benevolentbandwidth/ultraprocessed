@@ -15,28 +15,34 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,9 +59,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -69,18 +79,41 @@ import com.b2.ultraprocessed.R
 import com.b2.ultraprocessed.barcode.BarcodeLiveScanController
 import com.b2.ultraprocessed.camera.CameraCaptureController
 import com.b2.ultraprocessed.camera.LocalImageImportController
+import com.b2.ultraprocessed.ui.audio.AppSoundEvent
 import com.b2.ultraprocessed.ui.theme.Amber400
 import com.b2.ultraprocessed.ui.theme.Amber500
 import com.b2.ultraprocessed.ui.theme.DarkBg
-import com.b2.ultraprocessed.ui.theme.DarkerBg
 import com.b2.ultraprocessed.ui.theme.Emerald400
 import com.b2.ultraprocessed.ui.theme.Emerald500
+import com.b2.ultraprocessed.ui.theme.Emerald600
+import com.b2.ultraprocessed.ui.theme.SpaceGroteskFontFamily
 
 private enum class ScannerMode {
     /** Preview + still capture for the food-label analysis path. */
     Label,
     /** Preview + ML Kit live barcode → USDA path. */
     BarcodeLive,
+}
+
+private object ScannerMetrics {
+    val Grid = 8.dp
+    val Space2 = 16.dp
+    val Space3 = 24.dp
+    val ScreenPadding = 24.dp
+    val HeaderTitle = UiTextSizes.ScreenTitle
+    val HeaderSubtitle = UiTextSizes.BodySmall
+    val SecondaryText = UiTextSizes.BodySmall
+    val Caption = UiTextSizes.Caption
+    val PrimaryText = UiTextSizes.Body
+    val PillHeight = 48.dp
+    val PrimaryHeight = 56.dp
+    val PillRadius = 12.dp
+    val PrimaryRadius = 16.dp
+    val IconBubble = 24.dp
+    val IconSmall = 14.dp
+    val IconMedium = 20.dp
+    val ViewfinderInset = 32.dp
+    val ViewfinderSize = 288.dp
 }
 
 @Composable
@@ -92,6 +125,7 @@ fun ScannerScreen(
     onBarcodeScanned: (String) -> Unit,
     onSettings: () -> Unit,
     onHistory: () -> Unit,
+    onSoundEffect: (AppSoundEvent) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -128,6 +162,9 @@ fun ScannerScreen(
     val cameraPreviewDisabledBuildText = stringResource(R.string.scanner_camera_preview_disabled_build)
     val cameraStillStartingText = stringResource(R.string.scanner_camera_still_starting)
     val usdaMissingLookupText = stringResource(R.string.scanner_usda_missing_lookup)
+    val barcodeListeningText = stringResource(R.string.scanner_listening_barcode)
+    val barcodeStartingText = stringResource(R.string.scanner_starting_barcode_camera)
+    val controlScrollState = rememberScrollState()
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -202,59 +239,11 @@ fun ScannerScreen(
             .fillMaxSize()
             .background(DarkBg),
     ) {
-        AppHeader(
-            title = AppBrand.name,
-            subtitle = when (scannerMode) {
-                ScannerMode.Label -> "Live scanner"
-                ScannerMode.BarcodeLive -> "Barcode scanner"
-            },
-            actions = listOf(
-                AppHeaderAction(
-                    icon = Icons.Default.History,
-                    contentDescription = "History",
-                    onClick = onHistory,
-                    testTag = AppTestTags.HEADER_ACTION_HISTORY,
-                ),
-                AppHeaderAction(
-                    icon = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    onClick = onSettings,
-                    badgeVisible = !hasApiKey,
-                    testTag = AppTestTags.HEADER_ACTION_SETTINGS,
-                ),
-            ),
+        ScannerHomeHeader(
+            hasApiKey = hasApiKey,
+            onHistory = onHistory,
+            onSettings = onSettings,
         )
-
-        if (!hasUsdaApiKey) {
-            Surface(
-                color = Amber500.copy(alpha = 0.1f),
-                shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    Amber500.copy(alpha = 0.22f),
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(Amber400, CircleShape),
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = stringResource(R.string.analysis_api_key_missing),
-                        color = Amber400.copy(alpha = 0.84f),
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-        }
 
         if (!hasApiKey) {
             Surface(
@@ -263,102 +252,114 @@ fun ScannerScreen(
                 shape = RoundedCornerShape(14.dp),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    Amber500.copy(alpha = 0.18f),
+                    Amber500.copy(alpha = 0.30f),
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = ScannerMetrics.Space3, vertical = ScannerMetrics.Grid),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = ScannerMetrics.Space2, vertical = ScannerMetrics.Grid),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(
                         modifier = Modifier
                             .size(8.dp)
-                            .background(Amber400.copy(alpha = 0.7f), CircleShape),
+                            .background(Amber400, CircleShape),
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(ScannerMetrics.Grid))
                     Text(
-                        text = stringResource(R.string.analysis_api_key_missing),
-                        color = Amber400.copy(alpha = 0.72f),
-                        fontSize = 12.sp,
+                        text = stringResource(R.string.scanner_missing_key_banner),
+                        color = Amber400,
+                        fontSize = ScannerMetrics.SecondaryText,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
         }
 
-        Box(
+        Column(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .verticalScroll(controlScrollState)
+                .padding(horizontal = ScannerMetrics.ScreenPadding)
+                .padding(top = ScannerMetrics.Space3, bottom = ScannerMetrics.Grid),
+            verticalArrangement = Arrangement.spacedBy(ScannerMetrics.Space2),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(DarkBg, Color(0xFF101017), DarkBg),
-                        ),
-                    ),
-            )
-
-            Box(modifier = Modifier.size(284.dp)) {
+                    .widthIn(max = ScannerMetrics.ViewfinderSize)
+                    .fillMaxWidth()
+                    .aspectRatio(1f),
+            ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(18.dp)
-                        .clip(RoundedCornerShape(28.dp)),
+                        .fillMaxSize(),
                 ) {
                     if (enableLiveCamera && hasCameraPermission) {
-                        key(scannerMode, useFrontCamera) {
-                            AndroidView(
-                                factory = { viewContext ->
-                                    when (scannerMode) {
-                                        ScannerMode.Label -> barcodeLiveController.unbind()
-                                        ScannerMode.BarcodeLive -> cameraController.unbind()
-                                    }
-                                    PreviewView(viewContext).apply {
-                                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                                        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(ScannerMetrics.ViewfinderInset)
+                                .clip(RoundedCornerShape(8.dp)),
+                        ) {
+                            key(scannerMode, useFrontCamera) {
+                                AndroidView(
+                                    factory = { viewContext ->
                                         when (scannerMode) {
-                                            ScannerMode.Label -> {
-                                                cameraController.bind(
-                                                    previewView = this,
-                                                    lifecycleOwner = lifecycleOwner,
-                                                    cameraSelector = cameraSelector,
-                                                    onBound = { isCameraPipelineReady = true },
-                                                )
-                                            }
-                                            ScannerMode.BarcodeLive -> {
-                                                barcodeLiveController.bind(
-                                                    previewView = this,
-                                                    lifecycleOwner = lifecycleOwner,
-                                                    onBarcodeDetected = onBarcodeScanned,
-                                                    cameraSelector = cameraSelector,
-                                                    onBound = { isBarcodeLiveReady = true },
-                                                )
+                                            ScannerMode.Label -> barcodeLiveController.unbind()
+                                            ScannerMode.BarcodeLive -> cameraController.unbind()
+                                        }
+                                        PreviewView(viewContext).apply {
+                                            scaleType = PreviewView.ScaleType.FILL_CENTER
+                                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                                            when (scannerMode) {
+                                                ScannerMode.Label -> {
+                                                    cameraController.bind(
+                                                        previewView = this,
+                                                        lifecycleOwner = lifecycleOwner,
+                                                        cameraSelector = cameraSelector,
+                                                        onBound = { isCameraPipelineReady = true },
+                                                    )
+                                                }
+                                                ScannerMode.BarcodeLive -> {
+                                                    barcodeLiveController.bind(
+                                                        previewView = this,
+                                                        lifecycleOwner = lifecycleOwner,
+                                                        onBarcodeDetected = onBarcodeScanned,
+                                                        cameraSelector = cameraSelector,
+                                                        onBound = { isBarcodeLiveReady = true },
+                                                    )
+                                                }
                                             }
                                         }
-                                    }
-                                },
-                                update = {
-                                    if (scannerMode == ScannerMode.BarcodeLive) {
-                                        barcodeLiveController.updateBarcodeCallback(onBarcodeScanned)
-                                    }
-                                },
-                                // Do not call bind() from [update]: scan-line animation recomposes every frame.
+                                    },
+                                    update = {
+                                        if (scannerMode == ScannerMode.BarcodeLive) {
+                                            barcodeLiveController.updateBarcodeCallback(onBarcodeScanned)
+                                        }
+                                    },
+                                    // Do not call bind() from [update]: scan-line animation recomposes every frame.
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .testTag(AppTestTags.SCANNER_PREVIEW),
+                                )
+                            }
+                            Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .testTag(AppTestTags.SCANNER_PREVIEW),
+                                    .background(Color.Black.copy(alpha = 0.86f)),
                             )
                         }
                     } else {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color(0xFF11131A))
+                                .padding(ScannerMetrics.ViewfinderInset)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(DarkBg)
                                 .testTag(AppTestTags.SCANNER_PREVIEW),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -380,7 +381,7 @@ fun ScannerScreen(
                                     previewDisabledTestSafeText
                                 },
                                 color = Color.White.copy(alpha = 0.38f),
-                                fontSize = 12.sp,
+                                fontSize = UiTextSizes.BodySmall,
                             )
                             if (enableLiveCamera) {
                                 Spacer(modifier = Modifier.height(14.dp))
@@ -410,329 +411,242 @@ fun ScannerScreen(
                             }
                         }
                     }
-                }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(18.dp)
-                        .border(
-                            width = 2.dp,
-                            color = Emerald400.copy(alpha = 0.35f),
-                            shape = RoundedCornerShape(28.dp),
-                        ),
-                )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(ScannerMetrics.ViewfinderInset)
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.03f),
+                                shape = RoundedCornerShape(8.dp),
+                            ),
+                    )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 26.dp)
-                        .fillMaxHeight(scanProgress)
-                        .align(Alignment.TopCenter),
-                ) {
+                    ScannerCornerFrame(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(0.dp),
+                    )
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(2.dp)
-                            .align(Alignment.BottomCenter)
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(Color.Transparent, Emerald400, Color.Transparent),
+                            .padding(horizontal = 24.dp)
+                            .fillMaxHeight(scanProgress)
+                            .align(Alignment.TopCenter),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .align(Alignment.BottomCenter)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            Emerald400.copy(alpha = 0.70f),
+                                            Color.Transparent,
+                                        ),
+                                    ),
                                 ),
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .align(Alignment.Center)
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(8.dp),
                             ),
                     )
                 }
-
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .align(Alignment.Center)
-                        .border(
-                            width = 1.dp,
-                            color = Color.White.copy(alpha = 0.16f),
-                            shape = RoundedCornerShape(10.dp),
-                        ),
-                )
-
-                if (enableLiveCamera && hasCameraPermission && hasFrontCamera) {
-                    IconButton(
-                        onClick = {
-                            isCameraPipelineReady = false
-                            isBarcodeLiveReady = false
-                            useFrontCamera = !useFrontCamera
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 22.dp, bottom = 44.dp)
-                            .testTag(AppTestTags.SCANNER_FLIP_CAMERA),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Cameraswitch,
-                            contentDescription = "Switch between front and back camera",
-                            tint = Color.White.copy(alpha = 0.88f),
-                        )
-                    }
-                }
             }
 
-            Surface(
-                color = Color.White.copy(alpha = 0.05f),
-                shape = RoundedCornerShape(100.dp),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(top = 340.dp),
-            ) {
-                Text(
-                    text = when (scannerMode) {
-                        ScannerMode.Label -> if (useFrontCamera) {
-                            stringResource(R.string.scanner_front_label_ready)
-                        } else {
-                            stringResource(R.string.scanner_back_label_ready)
-                        }
-                        ScannerMode.BarcodeLive -> if (useFrontCamera) {
-                            stringResource(R.string.scanner_front_barcode_ready)
-                        } else {
-                            stringResource(R.string.scanner_back_barcode_ready)
-                        }
-                    },
-                    color = Color.White.copy(alpha = 0.3f),
-                    fontSize = 9.sp,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
             Text(
                 text = when (scannerMode) {
-                    ScannerMode.Label -> stringResource(R.string.analysis_aim_label)
-                    ScannerMode.BarcodeLive -> stringResource(R.string.analysis_aim_barcode)
+                    ScannerMode.Label -> stringResource(R.string.analysis_aim_label).uppercase()
+                    ScannerMode.BarcodeLive -> stringResource(R.string.analysis_aim_barcode).uppercase()
                 },
-                color = Color.White.copy(alpha = 0.35f),
-                fontSize = 11.sp,
-                letterSpacing = 2.sp,
+                color = Color.White.copy(alpha = 0.36f),
+                fontFamily = SpaceGroteskFontFamily,
+                fontSize = ScannerMetrics.SecondaryText,
+                fontWeight = FontWeight.Normal,
+                letterSpacing = 2.4.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            ScannerActionPill(
+                text = if (isImporting) {
+                    stringResource(R.string.scanner_importing)
+                } else {
+                    stringResource(R.string.scanner_upload_photo)
+                },
+                icon = Icons.Default.Image,
+                enabled = !isImporting,
+                selected = false,
+                onClick = {
+                    onSoundEffect(AppSoundEvent.Click)
+                    galleryLauncher.launch("image/*")
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ScannerMetrics.Grid)
+                    .testTag(AppTestTags.SCANNER_UPLOAD_BUTTON),
+            )
 
-            if (scannerMode == ScannerMode.BarcodeLive) {
-                Surface(
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ScannerMetrics.Grid),
+                horizontalArrangement = Arrangement.spacedBy(ScannerMetrics.Grid),
+            ) {
+                ScannerActionPill(
+                    text = stringResource(R.string.scanner_mode_label),
+                    icon = Icons.Default.CameraAlt,
+                    selected = scannerMode == ScannerMode.Label,
                     onClick = {
-                        scannerMode = ScannerMode.Label
-                        cameraStatusMessage = null
+                        if (scannerMode != ScannerMode.Label) {
+                            onSoundEffect(AppSoundEvent.Click)
+                            scannerMode = ScannerMode.Label
+                            cameraStatusMessage = null
+                        }
                     },
-                    color = Color.White.copy(alpha = 0.06f),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .testTag(AppTestTags.SCANNER_CAPTURE_BUTTON),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.scanner_back_to_label_scan),
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            } else {
-                Button(
+                    modifier = Modifier.weight(1f),
+                )
+
+                ScannerActionPill(
+                    text = stringResource(R.string.scanner_mode_barcode),
+                    icon = Icons.Filled.QrCodeScanner,
+                    selected = scannerMode == ScannerMode.BarcodeLive,
                     onClick = {
                         if (!enableLiveCamera) {
                             cameraStatusMessage = cameraPreviewDisabledBuildText
-                            return@Button
+                            return@ScannerActionPill
                         }
 
                         if (!hasCameraPermission) {
                             permissionLauncher.launch(Manifest.permission.CAMERA)
-                            return@Button
+                            return@ScannerActionPill
                         }
 
-                        if (!isCameraPipelineReady) {
-                            cameraStatusMessage = cameraStillStartingText
-                            return@Button
+                        if (scannerMode != ScannerMode.BarcodeLive) {
+                            onSoundEffect(AppSoundEvent.Click)
+                            scannerMode = ScannerMode.BarcodeLive
+                            cameraStatusMessage = null
                         }
 
-                        isCapturing = true
-                        cameraStatusMessage = null
-                        cameraController.capturePhoto(
-                            onSuccess = { capture ->
-                                isCapturing = false
-                                onScan(capture.absolutePath)
-                            },
-                            onError = { throwable ->
-                                isCapturing = false
-                                cameraStatusMessage = throwable.message ?: "Failed to capture image."
-                            },
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .testTag(AppTestTags.SCANNER_CAPTURE_BUTTON),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Emerald500),
-                    enabled = !isCapturing && (!enableLiveCamera || hasCameraPermission),
-                ) {
-                    if (isCapturing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            color = Color.Black,
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.scanner_capturing),
-                            color = Color.Black,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    } else {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.Black)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.scanner_scan_label),
-                            color = Color.Black,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (scannerMode == ScannerMode.Label) {
-                Surface(
-                    onClick = {
-                        if (!enableLiveCamera) {
-                            onBarcodeScanned("078742195760")
-                            return@Surface
-                        }
-                        if (!hasCameraPermission) {
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                            return@Surface
-                        }
-                        cameraStatusMessage = null
-                        scannerMode = ScannerMode.BarcodeLive
                         if (!hasUsdaApiKey) {
                             cameraStatusMessage = usdaMissingLookupText
                         }
                     },
-                    color = Color.White.copy(alpha = 0.04f),
-                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .testTag(AppTestTags.SCANNER_BARCODE_BUTTON),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.55f),
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.scanner_scan_barcode),
-                            color = Color.White.copy(alpha = 0.55f),
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
-            } else {
-                Surface(
-                    color = Color.White.copy(alpha = 0.04f),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(AppTestTags.SCANNER_BARCODE_BUTTON),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = when {
-                                !isBarcodeLiveReady -> stringResource(R.string.scanner_starting_barcode_camera)
-                                else -> stringResource(R.string.scanner_listening_barcode)
-                            },
-                            color = Color.White.copy(alpha = 0.55f),
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
+                )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Surface(
-                    onClick = {
-                        if (isImporting) return@Surface
-                        galleryLauncher.launch("image/*")
-                    },
-                    color = Color.White.copy(alpha = 0.04f),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(AppTestTags.SCANNER_UPLOAD_BUTTON),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Image,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isImporting) stringResource(R.string.scanner_importing) else stringResource(R.string.scanner_upload_photo),
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 12.sp,
-                        )
+            Button(
+                onClick = {
+                    if (!enableLiveCamera) {
+                        cameraStatusMessage = cameraPreviewDisabledBuildText
+                        return@Button
                     }
+
+                    if (!hasCameraPermission) {
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                        return@Button
+                    }
+
+                    if (scannerMode == ScannerMode.BarcodeLive) {
+                        onSoundEffect(AppSoundEvent.Click)
+                        cameraStatusMessage = if (isBarcodeLiveReady) {
+                            barcodeListeningText
+                        } else {
+                            barcodeStartingText
+                        }
+                        return@Button
+                    }
+
+                    if (!isCameraPipelineReady) {
+                        cameraStatusMessage = cameraStillStartingText
+                        return@Button
+                    }
+
+                    onSoundEffect(AppSoundEvent.Click)
+                    isCapturing = true
+                    cameraStatusMessage = null
+                    cameraController.capturePhoto(
+                        onSuccess = { capture ->
+                            isCapturing = false
+                            onScan(capture.absolutePath)
+                        },
+                        onError = { throwable ->
+                            isCapturing = false
+                            onSoundEffect(AppSoundEvent.Error)
+                            cameraStatusMessage = throwable.message ?: "Failed to capture image."
+                        },
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ScannerMetrics.Grid)
+                    .height(ScannerMetrics.PrimaryHeight)
+                    .testTag(AppTestTags.SCANNER_CAPTURE_BUTTON),
+                shape = RoundedCornerShape(ScannerMetrics.PrimaryRadius),
+                colors = ButtonDefaults.buttonColors(containerColor = Emerald500),
+                enabled = !isCapturing && (!enableLiveCamera || hasCameraPermission),
+            ) {
+                if (isCapturing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = stringResource(R.string.scanner_capturing),
+                        color = Color.Black,
+                        fontFamily = SpaceGroteskFontFamily,
+                        fontSize = ScannerMetrics.PrimaryText,
+                        fontWeight = FontWeight.Bold,
+                    )
+                } else {
+                    Icon(
+                        if (scannerMode == ScannerMode.BarcodeLive) {
+                            Icons.Filled.QrCodeScanner
+                        } else {
+                            Icons.Default.CameraAlt
+                        },
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(ScannerMetrics.IconMedium),
+                    )
+                    Spacer(modifier = Modifier.width(ScannerMetrics.Space2))
+                    Text(
+                        text = if (scannerMode == ScannerMode.BarcodeLive) {
+                            stringResource(R.string.scanner_scan_barcode)
+                        } else {
+                            stringResource(R.string.scanner_scan_label)
+                        },
+                        color = Color.Black,
+                        fontFamily = SpaceGroteskFontFamily,
+                        fontSize = ScannerMetrics.PrimaryText,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
 
             if (cameraStatusMessage != null) {
-                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = cameraStatusMessage ?: "",
                     color = Amber400.copy(alpha = 0.84f),
-                    fontSize = 11.sp,
-                )
-            } else if (hasCameraPermission) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = if (enableLiveCamera) {
-                        stringResource(R.string.scanner_local_storage_notice)
-                    } else {
-                        stringResource(R.string.scanner_local_storage_test_notice)
-                    },
-                    color = Color.White.copy(alpha = 0.25f),
-                    fontSize = 11.sp,
+                    fontSize = UiTextSizes.Caption,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
@@ -740,19 +654,260 @@ fun ScannerScreen(
         AppFooter(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
+    }
+}
 
+@Composable
+private fun ScannerHomeHeader(
+    hasApiKey: Boolean,
+    onHistory: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(
+                start = ScannerMetrics.ScreenPadding,
+                top = ScannerMetrics.Space2,
+                end = ScannerMetrics.ScreenPadding,
+                bottom = ScannerMetrics.Space2,
+            )
+            .testTag(AppTestTags.HEADER),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppBrandMark(sizeDp = 48)
+
+        Spacer(modifier = Modifier.width(ScannerMetrics.Space2))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.scanner_home_title),
+                color = Color.White.copy(alpha = 0.92f),
+                fontFamily = SpaceGroteskFontFamily,
+                fontSize = ScannerMetrics.HeaderTitle,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.4).sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.scanner_home_subtitle),
+                color = Emerald500.copy(alpha = 0.82f),
+                fontFamily = SpaceGroteskFontFamily,
+                fontSize = ScannerMetrics.HeaderSubtitle,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        ScannerHeaderAction(
+            icon = Icons.Default.History,
+            contentDescription = "History",
+            onClick = onHistory,
+            testTag = AppTestTags.HEADER_ACTION_HISTORY,
+        )
+
+        Spacer(modifier = Modifier.width(ScannerMetrics.Grid))
+
+        ScannerHeaderAction(
+            icon = Icons.Default.Settings,
+            contentDescription = "Settings",
+            onClick = onSettings,
+            badgeVisible = !hasApiKey,
+            testTag = AppTestTags.HEADER_ACTION_SETTINGS,
+        )
+    }
+}
+
+@Composable
+private fun ScannerHeaderAction(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    badgeVisible: Boolean = false,
+    testTag: String? = null,
+) {
+    val buttonModifier = Modifier
+        .size(40.dp)
+        .let { base ->
+            if (testTag != null) base.testTag(testTag) else base
+        }
+
+    Box {
+        Surface(
+            onClick = onClick,
+            color = Color.White.copy(alpha = 0.02f),
+            shape = CircleShape,
+            border = null,
+            modifier = buttonModifier,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = Color.White.copy(alpha = 0.58f),
+                    modifier = Modifier.size(23.dp),
+                )
+            }
+        }
+
+        if (badgeVisible) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(9.dp)
+                    .background(Amber400, CircleShape),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScannerCornerFrame(modifier: Modifier = Modifier) {
+    Box(modifier = modifier) {
+        ScannerCorner(
+            horizontalAlignment = Alignment.Start,
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+        ScannerCorner(
+            horizontalAlignment = Alignment.End,
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
+        ScannerCorner(
+            horizontalAlignment = Alignment.Start,
+            verticalAlignment = Alignment.Bottom,
+            modifier = Modifier.align(Alignment.BottomStart),
+        )
+        ScannerCorner(
+            horizontalAlignment = Alignment.End,
+            verticalAlignment = Alignment.Bottom,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
+    }
+}
+
+@Composable
+private fun ScannerCorner(
+    horizontalAlignment: Alignment.Horizontal,
+    verticalAlignment: Alignment.Vertical,
+    modifier: Modifier = Modifier,
+) {
+    val glowColor = Emerald400.copy(alpha = 0.42f)
+    val coreColor = Emerald400.copy(alpha = 0.68f)
+    Box(
+        modifier = modifier.size(48.dp),
+    ) {
         Box(
             modifier = Modifier
-                .height(20.dp)
-                .fillMaxWidth()
-                .background(DarkerBg),
-            contentAlignment = Alignment.Center,
+                .width(2.dp)
+                .height(48.dp)
+                .align(
+                    when (horizontalAlignment) {
+                        Alignment.Start -> Alignment.CenterStart
+                        else -> Alignment.CenterEnd
+                    },
+                )
+                .graphicsLayer { alpha = 0.72f }
+                .background(
+                    Brush.verticalGradient(
+                        when (verticalAlignment) {
+                            Alignment.Top -> listOf(coreColor, glowColor, Color.Transparent)
+                            else -> listOf(Color.Transparent, glowColor, coreColor)
+                        },
+                    ),
+                    RoundedCornerShape(999.dp),
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .width(48.dp)
+                .height(2.dp)
+                .align(
+                    when (verticalAlignment) {
+                        Alignment.Top -> Alignment.TopCenter
+                        else -> Alignment.BottomCenter
+                    },
+                )
+                .graphicsLayer { alpha = 0.72f }
+                .background(
+                    Brush.horizontalGradient(
+                        when (horizontalAlignment) {
+                            Alignment.Start -> listOf(coreColor, glowColor, Color.Transparent)
+                            else -> listOf(Color.Transparent, glowColor, coreColor)
+                        },
+                    ),
+                    RoundedCornerShape(999.dp),
+                ),
+        )
+    }
+}
+
+@Composable
+private fun ScannerActionPill(
+    text: String,
+    icon: ImageVector,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val contentColor = when {
+        selected -> Emerald400
+        enabled -> Color.White.copy(alpha = 0.56f)
+        else -> Color.White.copy(alpha = 0.30f)
+    }
+    val iconColor = when {
+        selected -> Emerald400
+        enabled -> Color.White.copy(alpha = 0.52f)
+        else -> Color.White.copy(alpha = 0.28f)
+    }
+    val containerColor = if (selected) Emerald500.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.035f)
+    val borderColor = if (selected) Emerald500.copy(alpha = 0.26f) else Color.White.copy(alpha = 0.055f)
+    val iconContainerColor = if (selected) Emerald500.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.045f)
+    Surface(
+        onClick = {
+            if (enabled) onClick()
+        },
+        color = containerColor,
+        shape = RoundedCornerShape(ScannerMetrics.PillRadius),
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier.heightIn(min = ScannerMetrics.PillHeight),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = ScannerMetrics.Space2, vertical = 4.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .width(112.dp)
-                    .height(4.dp)
-                    .background(Color.White.copy(alpha = 0.1f), CircleShape),
+                    .size(ScannerMetrics.IconBubble)
+                    .background(iconContainerColor, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(ScannerMetrics.IconSmall),
+                )
+            }
+            Spacer(modifier = Modifier.width(ScannerMetrics.Grid))
+            Text(
+                text = text,
+                color = contentColor,
+                fontFamily = SpaceGroteskFontFamily,
+                fontSize = ScannerMetrics.SecondaryText,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
         }
     }

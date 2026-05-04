@@ -121,6 +121,79 @@ val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
     }
 }
 
+val retiredSourcePaths = listOf(
+    "src/main/java/com/b2/ultraprocessed/ui/DemoImageSamples.kt",
+    "src/main/java/com/b2/ultraprocessed/ui/DemoSamplePickerDialog.kt",
+    "src/main/java/com/b2/ultraprocessed/classify/RulesClassifier.kt",
+    "src/main/java/com/b2/ultraprocessed/classify/OnDeviceLLMClassifier.kt",
+    "src/test/java/com/b2/ultraprocessed/classify/ClassifierOrchestratorTest.kt",
+    "src/test/java/com/b2/ultraprocessed/classify/RulesClassifierTest.kt",
+    "src/test/java/com/b2/ultraprocessed/classify/NovaIngredientSampleFixturesTest.kt",
+)
+
+val verifyNoRetiredSourceFiles = tasks.register("verifyNoRetiredSourceFiles") {
+    group = "verification"
+    description = "Fails before Kotlin/KSP if retired demo or legacy source files reappear."
+    doLast {
+        val existing = retiredSourcePaths
+            .map { layout.projectDirectory.file(it).asFile }
+            .filter { it.exists() }
+
+        if (existing.isNotEmpty()) {
+            throw GradleException(
+                "Retired source files reappeared and must not ship or enter KSP:\n" +
+                    existing.joinToString(separator = "\n") { " - ${it.relativeTo(projectDir)}" } +
+                    "\nDelete these files; they are intentionally ignored in .gitignore."
+            )
+        }
+    }
+}
+
+val verifyNoDatalessSources = tasks.register("verifyNoDatalessSources") {
+    group = "verification"
+    description = "Fails before Kotlin/KSP if macOS dataless placeholders exist under app/src."
+    doLast {
+        if (!System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
+            return@doLast
+        }
+
+        val appSrc = layout.projectDirectory.dir("src").asFile
+        val process = ProcessBuilder(
+            "/usr/bin/find",
+            appSrc.absolutePath,
+            "-flags",
+            "+dataless",
+            "-print",
+        )
+            .redirectErrorStream(true)
+            .start()
+        val datalessFiles = process.inputStream.bufferedReader().use { it.readText() }.trim()
+        val exitCode = process.waitFor()
+
+        if (exitCode != 0) {
+            throw GradleException("Unable to check for macOS dataless placeholders under app/src.")
+        }
+
+        if (datalessFiles.isNotEmpty()) {
+            throw GradleException(
+                "macOS dataless source placeholders detected under app/src. " +
+                    "These can make Gradle/KSP hang while hashing sources:\n$datalessFiles\n" +
+                    "Hydrate or delete the listed files before building."
+            )
+        }
+    }
+}
+
+val verifySourceTreeForBuild = tasks.register("verifySourceTreeForBuild") {
+    group = "verification"
+    description = "Guards the Android source tree from retired files and macOS dataless placeholders."
+    dependsOn(verifyNoRetiredSourceFiles, verifyNoDatalessSources)
+}
+
+tasks.named("preBuild") {
+    dependsOn(verifySourceTreeForBuild)
+}
+
 tasks.matching {
     it.path == ":app:assembleRelease" ||
         it.path == ":app:bundleRelease" ||
