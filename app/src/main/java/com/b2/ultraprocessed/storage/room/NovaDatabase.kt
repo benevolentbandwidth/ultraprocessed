@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ScanResult::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class NovaDatabase : RoomDatabase() {
@@ -59,6 +59,18 @@ abstract class NovaDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE scan_results ADD COLUMN isFailed INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE scan_results ADD COLUMN failureMessage TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+        )
     }
 }

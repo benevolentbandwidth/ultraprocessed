@@ -1,6 +1,6 @@
 # Camera, OCR, And Barcode
 
-This component owns product input capture. It turns physical product labels or barcodes into local image paths or barcode values for downstream analysis. OCR remains available as a fallback path, but the default label path sends the captured image into the staged LLM workflow when the user has saved an LLM key.
+This component owns product input capture. It turns physical product labels or barcodes into local image paths or barcode values for downstream analysis. OCR is always on device. Captured and uploaded label images are never sent to the API.
 
 ## Files
 
@@ -22,8 +22,8 @@ flowchart LR
     User --> CameraX[CameraX ImageCapture]
     CameraX --> File[App-local image file]
     File --> Analysis[FoodAnalysisPipeline]
-    Analysis --> LLM[LLM ingredient extraction]
-    Analysis --> OCR[ML Kit OCR fallback]
+    Analysis --> OCR[ML Kit OCR on device]
+    OCR --> LLM[Text-only LLM classification and allergens]
 ```
 
 ## Gallery Import Flow
@@ -33,8 +33,8 @@ flowchart LR
     Picker[Android content picker] --> Uri[Content URI]
     Uri --> Copy[Copy stream into app-local imports folder]
     Copy --> Analysis[FoodAnalysisPipeline]
-    Analysis --> LLM[LLM ingredient extraction]
-    Analysis --> OCR[ML Kit OCR fallback]
+    Analysis --> OCR[ML Kit OCR on device]
+    OCR --> LLM[Text-only LLM classification and allergens]
 ```
 
 ## Barcode Flow
@@ -71,4 +71,4 @@ flowchart LR
 
 - Missing image file returns a typed OCR/barcode failure.
 - Empty OCR text returns a user-friendly failure.
-- Barcode miss can fall back to image analysis when an image path is available.
+- Barcode miss can fall back to on-device OCR when an image path is available.

@@ -6,48 +6,44 @@ import org.junit.Test
 
 class FoodLabelPromptContractTest {
     @Test
-    fun extractionPrompt_requiresIngredientPanelAndInvalidImageCode() {
-        val prompt = promptText("food_label_ingredient_extraction_prompt.md")
-
-        assertTrue(prompt.contains("ingredient box or ingredient list", ignoreCase = true))
-        assertTrue(prompt.contains("code = -1", ignoreCase = true))
-        assertTrue(prompt.contains("Do not infer ingredients from product name", ignoreCase = true))
-        assertTrue(prompt.contains("front-of-pack photos", ignoreCase = true))
-        assertTrue(prompt.contains("generic food photos", ignoreCase = true))
-        assertTrue(prompt.contains("\"code\": 0"))
-    }
-
-    @Test
     fun classificationPrompt_usesOnlyExtractedIngredients() {
         val prompt = promptText("food_label_classification_prompt.md")
 
         assertTrue(prompt.contains("Use only `rawIngredientText` and `ingredients`", ignoreCase = true))
-        assertTrue(prompt.contains("OCR / Noisy Input Note", ignoreCase = true))
-        assertTrue(prompt.contains("do not invent missing ingredients", ignoreCase = true))
-        assertTrue(prompt.contains("Choose the lowest NOVA group", ignoreCase = true))
-        assertTrue(prompt.contains("ingredientAssessments", ignoreCase = true))
+        assertTrue(prompt.contains("Make exactly one overall NOVA classification", ignoreCase = true))
+        assertTrue(prompt.contains("Do not correct ingredient names", ignoreCase = true))
+        assertTrue(prompt.contains("Do not detect allergens", ignoreCase = true))
         assertTrue(prompt.contains("novaGroup", ignoreCase = true))
-        assertTrue(prompt.contains("Allergen detection is a separate API call", ignoreCase = true))
-        assertTrue(prompt.contains("Do not use allergen logic", ignoreCase = true))
+        assertTrue(prompt.contains("Do not use a generic default NOVA group", ignoreCase = true))
+        assertTrue(prompt.contains("witty but polite and professional one-liner", ignoreCase = true))
+        assertTrue(prompt.contains("surrounding package text", ignoreCase = true))
+    }
+
+    @Test
+    fun ingredientAnalysisPrompt_correctsNamesAndReturnsUltraProcessedSubset() {
+        val prompt = promptText("food_label_ingredient_analysis_prompt.md")
+
+        assertTrue(prompt.contains("Correct ingredient list names", ignoreCase = true))
+        assertTrue(prompt.contains("ultraProcessedIngredients", ignoreCase = true))
+        assertTrue(prompt.contains("must exactly match one item from `correctedIngredients`", ignoreCase = true))
+        assertTrue(prompt.contains("Do not make the overall NOVA classification", ignoreCase = true))
+        assertTrue(prompt.contains("directly controls capsule coloration", ignoreCase = true))
+        assertTrue(prompt.contains("Filter all non-ingredient content out", ignoreCase = true))
     }
 
     @Test
     fun allergenPrompt_usesOnlyExtractedIngredients() {
         val prompt = promptText("food_label_allergen_prompt.md")
 
-        assertTrue(prompt.contains("Use only `rawIngredientText` and `ingredients`", ignoreCase = true))
-        assertTrue(prompt.contains("OCR / Noisy Input Note", ignoreCase = true))
-        assertTrue(prompt.contains("do not guess from product name", ignoreCase = true))
-        assertTrue(prompt.contains("Do not infer from shared-facility claims", ignoreCase = true))
+        assertTrue(prompt.contains("Use only `correctedIngredients`", ignoreCase = true))
+        assertTrue(prompt.contains("Common US / Western Allergen Signals", ignoreCase = true))
         assertTrue(prompt.contains("standalone allergen name", ignoreCase = true))
-        assertTrue(prompt.contains("Contains: Wheat, May Contain Milk", ignoreCase = true))
     }
 
     @Test
     fun validationPrompt_repairsSentenceLikeLabels() {
         val prompt = promptText("food_label_response_validation_prompt.md")
 
-        assertTrue(prompt.contains("ingredient extraction", ignoreCase = true))
         assertTrue(prompt.contains("classification", ignoreCase = true))
         assertTrue(prompt.contains("allergen detection", ignoreCase = true))
         assertTrue(prompt.contains("sentence-like ingredient text or allergen text", ignoreCase = true))

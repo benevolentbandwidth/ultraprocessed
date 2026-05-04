@@ -29,11 +29,19 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,7 +51,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.b2.ultraprocessed.R
-import com.b2.ultraprocessed.ui.theme.Amber400
 import com.b2.ultraprocessed.ui.theme.DarkBg
 import com.b2.ultraprocessed.ui.theme.Emerald400
 import com.b2.ultraprocessed.ui.theme.SpaceGroteskFontFamily
@@ -82,7 +89,10 @@ fun HistoryScreen(
     onClearAll: () -> Unit,
     @Suppress("UNUSED_PARAMETER")
     onClearItem: (HistoryItemUi) -> Unit,
+    onRerunItem: (HistoryItemUi) -> Unit,
 ) {
+    var pendingRerunItem by remember { mutableStateOf<HistoryItemUi?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -127,7 +137,10 @@ fun HistoryScreen(
                 verticalArrangement = Arrangement.spacedBy(HistoryMetrics.Space2),
             ) {
                 items(historyItems, key = { it.id }) { item ->
-                    HistoryVerdictCard(item = item)
+                    HistoryVerdictCard(
+                        item = item,
+                        onRerunClick = { pendingRerunItem = item },
+                    )
                 }
                 item {
                     AppFooter(
@@ -139,6 +152,45 @@ fun HistoryScreen(
                 }
             }
         }
+    }
+
+    val rerunItem = pendingRerunItem
+    if (rerunItem != null) {
+        AlertDialog(
+            onDismissRequest = { pendingRerunItem = null },
+            containerColor = DarkBg,
+            title = {
+                Text(
+                    text = "Rerun this scan?",
+                    color = Color.White.copy(alpha = 0.92f),
+                    fontFamily = SpaceGroteskFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
+            text = {
+                Text(
+                    text = "${historyAnalysisTitle(rerunItem)} will be preprocessed and analyzed again.",
+                    color = Color.White.copy(alpha = 0.64f),
+                    fontSize = HistoryType.CardMeta,
+                    lineHeight = 16.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRerunItem = null
+                        onRerunItem(rerunItem)
+                    },
+                ) {
+                    Text("Rerun", color = Emerald400, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRerunItem = null }) {
+                    Text("Cancel", color = Color.White.copy(alpha = 0.64f))
+                }
+            },
+        )
     }
 }
 
@@ -355,7 +407,10 @@ private fun LocalStorageNotice() {
 }
 
 @Composable
-private fun HistoryVerdictCard(item: HistoryItemUi) {
+private fun HistoryVerdictCard(
+    item: HistoryItemUi,
+    onRerunClick: () -> Unit,
+) {
     val style = historyVerdictStyle(item)
     Surface(
         color = style.color.copy(alpha = 0.11f),
@@ -382,12 +437,22 @@ private fun HistoryVerdictCard(item: HistoryItemUi) {
                     modifier = Modifier.size(20.dp),
                 )
             }
+            if (item.isFailed) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Failed",
+                    color = style.color,
+                    fontSize = HistoryType.CardUsage,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 10.sp,
+                )
+            }
 
             Spacer(modifier = Modifier.width(HistoryMetrics.Space2))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = displayProductName(item.productName.ifBlank { stringResource(R.string.results_scan_title) }),
+                    text = historyAnalysisTitle(item),
                     color = Color.White.copy(alpha = 0.80f),
                     fontFamily = SpaceGroteskFontFamily,
                     fontSize = HistoryType.CardTitle,
@@ -400,8 +465,10 @@ private fun HistoryVerdictCard(item: HistoryItemUi) {
                 Text(
                     text = if (item.isBarcodeLookupOnly) {
                         "Barcode lookup · ${relativeScanTime(item)}"
+                    } else if (item.isFailed) {
+                        "Failed · ${relativeScanTime(item)}"
                     } else {
-                        "NOVA ${item.novaGroup} · ${relativeScanTime(item)}"
+                        "${displayProductName(item.productName.ifBlank { stringResource(R.string.results_scan_title) })} · ${relativeScanTime(item)}"
                     },
                     color = Color.White.copy(alpha = 0.34f),
                     fontSize = HistoryType.CardMeta,
@@ -426,25 +493,59 @@ private fun HistoryVerdictCard(item: HistoryItemUi) {
 
             Spacer(modifier = Modifier.width(HistoryMetrics.Space2))
 
-            Text(
-                text = style.label,
-                color = style.color,
-                fontFamily = SpaceGroteskFontFamily,
-                fontSize = HistoryType.Status,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 12.sp,
-                letterSpacing = 1.4.sp,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = style.label,
+                    color = style.color,
+                    fontFamily = SpaceGroteskFontFamily,
+                    fontSize = HistoryType.Status,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 12.sp,
+                    letterSpacing = 1.4.sp,
+                )
+                if (!item.capturedImagePath.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(HistoryMetrics.Grid / 2))
+                    IconButton(
+                        onClick = onRerunClick,
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Rerun scan",
+                            tint = Color.White.copy(alpha = 0.68f),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 private fun historyUsageLine(item: HistoryItemUi): String =
-    listOfNotNull(
-        item.modelName.takeIf { it.isNotBlank() },
-        if (item.estimatedTokens > 0) "${formatTokens(item.estimatedTokens)} tokens" else null,
-        if (item.estimatedCostUsd > 0.0) "${formatMoney(item.estimatedCostUsd)} est." else null,
-    ).joinToString(" · ")
+    if (item.isFailed) {
+        item.failureMessage.take(72)
+    } else {
+        listOfNotNull(
+            item.modelName.takeIf { it.isNotBlank() },
+            if (item.estimatedTokens > 0) "${formatTokens(item.estimatedTokens)} tokens" else null,
+            if (item.estimatedCostUsd > 0.0) "${formatMoney(item.estimatedCostUsd)} est." else null,
+        ).joinToString(" · ")
+    }
+
+private fun historyAnalysisTitle(item: HistoryItemUi): String =
+    "Analysis - ${historyGroupHeading(item)} - ${item.scannedAt}"
+
+private fun historyGroupHeading(item: HistoryItemUi): String =
+    when {
+        item.isFailed -> "Failed"
+        item.isBarcodeLookupOnly -> "Barcode Lookup"
+        item.novaGroup == 1 -> "Unprocessed"
+        item.novaGroup == 2 -> "Culinary Ingredient"
+        item.novaGroup == 3 -> "Processed"
+        item.novaGroup == 4 -> "Ultra-Processed"
+        else -> "NOVA ${item.novaGroup}"
+    }
 
 private fun displayProductName(name: String): String {
     val compact = name.trim().replace(Regex("\\s+"), " ")
@@ -465,9 +566,11 @@ private fun displayProductName(name: String): String {
 @Composable
 private fun historyVerdictStyle(item: HistoryItemUi): HistoryVerdictStyle =
     when {
+        item.isFailed -> HistoryVerdictStyle("FAILED", Color(0xFFFF6B6B), Icons.Default.Cancel)
         item.isBarcodeLookupOnly -> HistoryVerdictStyle("LOOKUP", SkyBlue400, Icons.Default.QrCode)
-        item.novaGroup == 1 -> HistoryVerdictStyle("PASS", Emerald400, Icons.Default.CheckCircle)
-        item.novaGroup == 2 || item.novaGroup == 3 -> HistoryVerdictStyle("CAUTION", Amber400, Icons.Default.Warning)
+        item.novaGroup == 1 -> HistoryVerdictStyle("UNPROCESSED", Emerald400, Icons.Default.CheckCircle)
+        item.novaGroup == 2 -> HistoryVerdictStyle("CULINARY", Color(0xFFFEF08A), Icons.Default.Warning)
+        item.novaGroup == 3 -> HistoryVerdictStyle("PROCESSED", Color(0xFFFB923C), Icons.Default.Warning)
         else -> HistoryVerdictStyle("AVOID", Color(0xFFFF6B6B), Icons.Default.Cancel)
     }
 

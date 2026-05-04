@@ -50,6 +50,7 @@ data class ScanResultUi(
     val scannedBarcode: String? = null,
     val brandOwner: String? = null,
     val usageEstimate: UsageEstimateUi? = null,
+    val analyzedAtMillis: Long = System.currentTimeMillis(),
 )
 
 data class HistoryItemUi(
@@ -65,6 +66,8 @@ data class HistoryItemUi(
     val provider: String = "",
     val estimatedTokens: Int = 0,
     val estimatedCostUsd: Double = 0.0,
+    val isFailed: Boolean = false,
+    val failureMessage: String = "",
 )
 
 enum class ResultChatRole {
@@ -118,23 +121,23 @@ object AppCatalog {
             id = "gemini-2.0-flash",
             name = "Gemini 2.0 Flash",
             provider = "Gemini (Google)",
-            description = "Default image analysis model",
-            supportsImages = true,
+            description = "Default text analysis model for on-device OCR output",
+            supportsImages = false,
             recommended = true,
         ),
         ModelOption(
             id = "gpt-4.1-mini",
             name = "GPT-4.1 mini",
             provider = "OpenAI",
-            description = "Fast multimodal classification",
-            supportsImages = true,
+            description = "Fast text classification for OCR output",
+            supportsImages = false,
         ),
         ModelOption(
             id = "grok-2-vision-latest",
-            name = "Grok 2 Vision",
+            name = "Grok 2",
             provider = "Grok (xAI)",
-            description = "Vision-capable Grok model",
-            supportsImages = true,
+            description = "Text-only analysis in Zest; images stay on device",
+            supportsImages = false,
         ),
         ModelOption(
             id = "llama-3.1-8b-instant",

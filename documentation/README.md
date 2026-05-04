@@ -88,7 +88,7 @@ flowchart TB
 - Local OCR may still provide text input, but it is only a transport mechanism into the API contract.
 - Ingredient bubbles are driven by atomic ingredient items and per-item NOVA groups.
 - Allergens have a separate UI block and a separate API contract.
-- Invalid images stop at extraction with `code = -1`.
+- OCR failures stop before any LLM request is made.
 - Typography, spacing, and brand usage should come from shared UI files rather than one-off screen overrides.
 - Usage totals in history are estimates derived by the app unless the provider contract is extended to return exact usage metadata.
 

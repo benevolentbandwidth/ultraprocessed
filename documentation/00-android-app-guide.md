@@ -161,9 +161,9 @@ flowchart TD
     Tap[Tap Scan Label] --> Capture[CameraX captures image]
     Capture --> File[Saved app-local image path]
     File --> Analyze[FoodAnalysisPipeline.analyzeFromImage]
-    Analyze --> Extract[LLM ingredient extraction]
-    Extract --> Classify[LLM NOVA classification]
-    Extract --> Allergens[LLM allergen detection]
+    Analyze --> OCR[ML Kit OCR on device]
+    OCR --> Classify[LLM NOVA classification from text]
+    OCR --> Allergens[LLM allergen detection from text]
     Classify --> Result[ScanResultUi]
     Allergens --> Result
     Result --> Room[Persist to Room history]
@@ -211,7 +211,8 @@ Important boundaries:
 - History is local to the device.
 - Captured images are local files.
 - Sound preferences are local app settings.
-- LLM providers receive images or ingredient evidence only when the user has configured a key.
+- LLM providers never receive captured or uploaded images.
+- LLM providers receive extracted ingredient text only when the user has configured a key.
 - USDA receives barcode/product lookup requests only when USDA access is configured.
 
 ## Build System
@@ -260,4 +261,3 @@ Use this checklist before handing a change to someone else:
 | Change analysis behavior | `analysis/FoodAnalysisPipeline.kt` |
 | Change LLM prompts | `app/src/main/assets/prompts/` |
 | Change local history schema | `storage/room/ScanResult.kt` and `app/schemas/` |
-

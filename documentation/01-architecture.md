@@ -1,6 +1,6 @@
 # Architecture
 
-Zest is a native Android app for label analysis. It launches through a branded Android splash and Compose splash, captures a food label image or barcode, sends ingredient evidence through staged API workflows for NOVA classification and allergen detection, and stores the final result locally for history and review.
+Zest is a native Android app for label analysis. It launches through a branded Android splash and Compose splash, captures a food label image or barcode, extracts image text on device with ML Kit OCR, sends only ingredient text through staged API workflows for NOVA classification and allergen detection, and stores the final result locally for history and review.
 
 ## Design Goals
 
@@ -59,10 +59,9 @@ sequenceDiagram
 
     User->>Scanner: Capture or import image
     Scanner->>Pipeline: analyzeFromImage(path)
-    Pipeline->>LLM: extractIngredients(image)
-    LLM-->>Pipeline: IngredientExtraction
-    Pipeline->>LLM: classifyIngredients(extraction)
-    Pipeline->>LLM: detectAllergens(extraction)
+    Pipeline->>Pipeline: ML Kit OCR extracts text on device
+    Pipeline->>LLM: classifyIngredients(text extraction)
+    Pipeline->>LLM: detectAllergens(text extraction)
     Pipeline-->>Scanner: AnalysisReport
     Scanner->>Room: Persist scan result and usage estimate
 ```
@@ -153,7 +152,6 @@ classDiagram
     }
     class FoodLabelLlmWorkflow {
         <<interface>>
-        +extractIngredients()
         +classifyIngredients()
         +detectAllergens()
     }
@@ -185,9 +183,9 @@ classDiagram
 
 ## Failure Policy
 
-- Invalid image at extraction returns `code = -1` and stops.
+- OCR failures stop before any LLM request is made.
 - API rate limit errors surface as 429-specific UI messages.
-- USDA lookup miss falls back to image analysis only when an image exists.
+- USDA lookup miss falls back to on-device OCR only when an image exists.
 - If the LLM workflow is unavailable, the analysis fails rather than inventing a result.
 
 ## Build-Time Protection

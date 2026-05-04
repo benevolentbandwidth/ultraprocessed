@@ -24,7 +24,7 @@ The storage contract is intentionally split by sensitivity:
 
 API keys are stored with Android Keystore-backed encrypted preferences:
 
-- `LLM_API_KEY` for the staged image analysis workflow.
+- `LLM_API_KEY` for text-only NOVA classification, allergen detection, and result chat.
 - `USDA_API_KEY` for FoodData Central barcode lookup.
 
 Rules:
@@ -116,9 +116,10 @@ Network:
 
 - USDA barcode lookup sends barcode/product query and uses a user-provided USDA key.
 - USDA requests do not use disk HTTP cache because the API key is part of the provider request URL.
-- Staged LLM image analysis sends the captured label image for ingredient extraction when the user has saved an LLM key.
-- LLM classification and allergen detection send extracted ingredient JSON, not the image.
-- Invalid images are rejected at extraction with `code = -1`; later LLM stages and local fallback are not invoked for that user input.
+- Captured and uploaded label images are never sent to LLM providers.
+- ML Kit OCR extracts text on device.
+- LLM classification and allergen detection send extracted ingredient JSON only, not the image.
+- OCR failures stop the flow before LLM classification or allergen detection.
 - If no LLM key is saved, the app cannot perform analysis. All classification is dependent on the LLM provider.
 
 ## Secret Lifecycle
@@ -137,7 +138,7 @@ The settings screen only shows metadata inferred from the saved LLM key:
 
 - provider
 - default model name
-- whether the provider accepts images
+- whether the provider is used text-only in Zest
 
 It does not display the key itself. USDA access is also stored through `SecretKeyManager` and treated as sensitive.
 

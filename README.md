@@ -74,7 +74,7 @@ Zest is designed to keep your data local by default.
 - Saved keys are not shown back in plain text.
 - No sign-in is required.
 
-When you analyze a label, the app sends the image or extracted ingredient data to the selected API provider only if you have configured a key for that provider.
+When you analyze a label, OCR runs on device first. The app never sends captured or uploaded label images to the API provider. Only extracted ingredient text is sent for classification and allergen detection when you have configured a key.
 
 ## Important Notes
 

@@ -6,20 +6,6 @@ import com.b2.ultraprocessed.ui.UsageEstimateUi
 import kotlin.math.ceil
 
 object UsageEstimateCalculator {
-    fun estimateImageWorkflow(
-        modelId: String,
-        ingredientText: String,
-        problemIngredientCount: Int,
-        allergenCount: Int,
-    ): UsageEstimateUi = estimate(
-        modelId = modelId,
-        providerId = providerIdFor(modelId),
-        inputTokens = IMAGE_PROMPT_TOKENS + approximateTokens(ingredientText) * 2,
-        outputTokens = IMAGE_OUTPUT_TOKENS +
-            problemIngredientCount.coerceAtLeast(0) * 18 +
-            allergenCount.coerceAtLeast(0) * 6,
-    )
-
     fun estimateTextWorkflow(
         modelId: String,
         ingredientText: String,
@@ -101,8 +87,6 @@ object UsageEstimateCalculator {
         val outputPerMillion: Double,
     )
 
-    private const val IMAGE_PROMPT_TOKENS = 260
-    private const val IMAGE_OUTPUT_TOKENS = 140
     private const val TEXT_PROMPT_TOKENS = 120
     private const val TEXT_OUTPUT_TOKENS = 90
 }

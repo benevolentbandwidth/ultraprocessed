@@ -66,6 +66,12 @@ data class ScanResult(
     @ColumnInfo(defaultValue = "0")
     val isBarcodeLookupOnly: Boolean,
 
+    @ColumnInfo(defaultValue = "0")
+    val isFailed: Boolean = false,
+
+    @ColumnInfo(defaultValue = "")
+    val failureMessage: String = "",
+
     // Timestamp of when the scan happened
     val scannedAt: Long = System.currentTimeMillis()
 )

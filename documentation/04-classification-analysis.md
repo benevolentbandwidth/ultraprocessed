@@ -1,6 +1,6 @@
 # Classification And Analysis
 
-This layer turns extracted ingredient evidence into the final result model shown by the UI. It is staged, contract-driven, and API-only for classification and allergen detection.
+This layer turns on-device OCR or USDA ingredient evidence into the final result model shown by the UI. It is staged, contract-driven, and API-only for classification and allergen detection. Images never enter the API workflow.
 
 ## Files
 
@@ -13,7 +13,6 @@ This layer turns extracted ingredient evidence into the final result model shown
 - `network/llm/OpenAiCompatibleFoodLabelLlmWorkflow.kt`
 - `network/llm/LlmContractRetry.kt`
 - `network/llm/ResultChatWorkflow.kt`
-- `assets/prompts/food_label_ingredient_extraction_prompt.md`
 - `assets/prompts/food_label_classification_prompt.md`
 - `assets/prompts/food_label_allergen_prompt.md`
 - `assets/prompts/food_label_response_validation_prompt.md`
@@ -24,11 +23,11 @@ This layer turns extracted ingredient evidence into the final result model shown
 
 ```mermaid
 flowchart TB
-    Input[Image or barcode text] --> Extract[Ingredient extraction]
-    Extract --> Gate{code == -1?}
-    Gate -->|Yes| Invalid[Invalid image error]
-    Gate -->|No| Classify[NOVA classification]
-    Gate -->|No| Allergen[Allergen detection]
+    Input[Image or barcode text] --> Extract[On-device OCR or USDA text extraction]
+    Extract --> Gate{Enough ingredient text?}
+    Gate -->|No| Invalid[OCR/text failure]
+    Gate -->|Yes| Classify[NOVA classification]
+    Gate -->|Yes| Allergen[Allergen detection]
     Classify --> Result[AnalysisReport]
     Allergen --> Result
     Result --> Usage[Usage estimate]
@@ -38,12 +37,12 @@ flowchart TB
 
 ## Stage Contracts
 
-### Extraction
+### OCR/Text Extraction
 
-- Input: image path.
+- Input: image path or USDA ingredient text.
 - Output: `IngredientExtraction`.
-- Purpose: validate that the image is a real ingredient panel and produce atomic ingredient items.
-- Failure: `code = -1` stops the pipeline.
+- Purpose: produce text evidence without sending images to the API.
+- Failure: missing or too-short text stops the pipeline before classification.
 
 ### Classification
 
@@ -186,6 +185,6 @@ flowchart LR
 ## Operational Notes
 
 - OCR text may be noisy; the prompt and parser treat it as evidence, not truth.
-- If extraction says invalid image, the entire flow stops.
+- If OCR cannot read enough text, the entire flow stops before any LLM request.
 - If classification or allergen detection fails, the analysis fails for that scan.
 - There is no rule-based fallback classifier in the runtime path.

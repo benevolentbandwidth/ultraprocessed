@@ -53,7 +53,7 @@ import kotlinx.coroutines.delay
 private data class Step(val text: String, val tag: String)
 
 enum class AnalysisMode {
-    /** Photo of ingredient label → staged LLM workflow, with OCR/rules fallback. */
+    /** Photo of ingredient label → on-device OCR → API text classification. */
     LabelImage,
     /** Photo still → read barcode from image → USDA → classify. */
     BarcodeImage,

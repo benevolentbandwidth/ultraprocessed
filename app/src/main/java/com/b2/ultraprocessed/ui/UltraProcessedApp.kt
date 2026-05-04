@@ -219,6 +219,19 @@ fun UltraProcessedApp(
                         },
                         onFailure = { message ->
                             playSound(AppSoundEvent.Error)
+                            val failedImagePath = lastCapturedPhotoPath
+                            if (!failedImagePath.isNullOrBlank()) {
+                                coroutineScope.launch {
+                                    runCatching {
+                                        scanResultDao.insertScanResult(
+                                            failedScanResultEntity(
+                                                imagePath = failedImagePath,
+                                                message = message,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
                             analysisErrorMessage = message
                             barcodeValue = null
                             destination = AppDestination.AnalysisError
@@ -391,6 +404,16 @@ fun UltraProcessedApp(
                                 }
                             }
                         },
+                        onRerunItem = { item ->
+                            val path = item.capturedImagePath
+                            if (!path.isNullOrBlank()) {
+                                lastCapturedPhotoPath = path
+                                barcodeValue = null
+                                analysisMode = AnalysisMode.LabelImage
+                                scanSessionId++
+                                destination = AppDestination.Analyzing
+                            }
+                        },
                     )
                 }
             }
@@ -434,6 +457,29 @@ private fun ScanResultUi.toScanResultEntity(): ScanResultEntity =
         estimatedCostUsd = usageEstimate?.estimatedCostUsd ?: 0.0,
         capturedImagePath = labelImagePath,
         isBarcodeLookupOnly = isBarcodeLookupOnly,
+        isFailed = false,
+        failureMessage = "",
+    )
+
+private fun failedScanResultEntity(
+    imagePath: String,
+    message: String,
+): ScanResultEntity =
+    ScanResultEntity(
+        productName = "Failed analysis",
+        novaGroup = 0,
+        ocrText = "",
+        cleanedIngredients = "",
+        verdict = "Failed",
+        confidenceScore = 0f,
+        detectedMarkers = "[]",
+        allergens = "[]",
+        explanation = message,
+        engineUsed = "Analysis pipeline",
+        capturedImagePath = imagePath,
+        isBarcodeLookupOnly = false,
+        isFailed = true,
+        failureMessage = message,
     )
 
 private fun ScanResultEntity.toHistoryItemUi(): HistoryItemUi =
@@ -450,6 +496,8 @@ private fun ScanResultEntity.toHistoryItemUi(): HistoryItemUi =
         provider = provider.ifBlank { "" },
         estimatedTokens = estimatedTotalTokens,
         estimatedCostUsd = estimatedCostUsd,
+        isFailed = isFailed,
+        failureMessage = failureMessage,
     )
 
 private fun List<ScanResultEntity>.toHistoryUsageSummaryUi(): HistoryUsageSummaryUi {

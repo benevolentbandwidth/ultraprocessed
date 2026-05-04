@@ -62,6 +62,9 @@ import com.b2.ultraprocessed.ui.theme.DarkerBg
 import com.b2.ultraprocessed.ui.theme.Amber400
 import com.b2.ultraprocessed.ui.theme.Emerald500
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
@@ -247,15 +250,11 @@ private fun FullAnalysisResultBody(
     val headline = shopperHeadline(result.novaGroup)
     val ingredientItems = remember(result.ingredientAssessments) {
         result.ingredientAssessments
-            .filterNot { assessment ->
-                assessment.name.startsWith("contains:", ignoreCase = true) ||
-                    assessment.name.startsWith("may contain", ignoreCase = true)
-            }
             .sortedWith(compareBy<IngredientBubbleUi> { it.novaGroup }.thenBy { it.name.lowercase() })
     }
 
     Text(
-        text = result.productName,
+        text = analysisTitle(result),
         color = Color.White.copy(alpha = 0.92f),
         fontSize = UiTextSizes.ScreenTitle,
         fontWeight = FontWeight.SemiBold,
@@ -345,7 +344,7 @@ private fun FullAnalysisResultBody(
                 letterSpacing = 1.6.sp,
             )
             Text(
-                text = "$confidenceLabel signal (${(result.confidence * 100).toInt()}%) · ${result.engineLabel}",
+                text = "$confidenceLabel signal (${(result.confidence * 100).toInt()}%)",
                 color = Color.White.copy(alpha = 0.28f),
                 fontSize = UiTextSizes.Caption,
                 fontWeight = FontWeight.Medium,
@@ -357,12 +356,7 @@ private fun FullAnalysisResultBody(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    Text(
-        text = result.summary,
-        color = Color.White.copy(alpha = 0.55f),
-        fontSize = UiTextSizes.Body,
-        lineHeight = 20.sp,
-    )
+    AnalysisOneLinerBlock(summary = result.summary)
 
     Spacer(modifier = Modifier.height(18.dp))
 
@@ -373,7 +367,7 @@ private fun FullAnalysisResultBody(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            UiSectionHeader(text = stringResource(R.string.results_label_detail_section))
+            UiSectionHeader(text = analysisTitle(result))
             Spacer(modifier = Modifier.height(10.dp))
             IngredientChips(items = ingredientItems)
         }
@@ -394,17 +388,30 @@ private fun FullAnalysisResultBody(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    if (result.warnings.isNotEmpty()) {
-        DataWarningBlock(warnings = result.warnings)
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-
     Text(
         text = stringResource(R.string.results_footer_note),
         color = Color.White.copy(alpha = 0.34f),
         fontSize = UiTextSizes.Caption,
         lineHeight = 16.sp,
     )
+}
+
+@Composable
+private fun AnalysisOneLinerBlock(summary: String) {
+    Surface(
+        color = Color.White.copy(alpha = 0.045f),
+        shape = RoundedCornerShape(18.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = summary,
+            color = Color.White.copy(alpha = 0.68f),
+            fontSize = UiTextSizes.Body,
+            lineHeight = 20.sp,
+            modifier = Modifier.padding(16.dp),
+        )
+    }
 }
 
 @Composable
@@ -464,7 +471,8 @@ private fun confidenceBandLabel(confidence: Float): String = when {
 
 private fun shopperHeadline(novaGroup: Int): String = when (novaGroup) {
     1 -> "Likely a simpler choice—fewer industrial additives flagged on this list."
-    2, 3 -> "Processed—compare with shorter lists and fewer additives when you can."
+    2 -> "Culinary ingredient territory—useful in cooking, but usually not a snack by itself."
+    3 -> "Processed—recognizable, but still worth comparing with shorter ingredient lists."
     else -> "High ultra-processing risk on this label—worth swapping if you want to cut UPFs."
 }
 
@@ -608,33 +616,6 @@ private fun String.toReadableToken(): String {
     val chars = lowercase().toCharArray()
     chars[firstLetter] = chars[firstLetter].uppercaseChar()
     return String(chars)
-}
-
-@Composable
-private fun DataWarningBlock(warnings: List<String>) {
-    Surface(
-        color = Color(0x16F59E0B),
-        shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x44F59E0B)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            UiSectionHeader(
-                text = stringResource(R.string.results_data_warning_section),
-                accentColor = Amber400,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            warnings.forEach { warning ->
-                Text(
-                    text = warning,
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = UiTextSizes.BodySmall,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-            }
-        }
-    }
 }
 
 @Composable
@@ -851,24 +832,32 @@ private data class VerdictPalette(
 private fun verdictColors(novaGroup: Int): VerdictPalette =
     when (novaGroup) {
         1 -> VerdictPalette(
-            label = "NOVA 1",
-            subLabel = "Minimally processed",
+            label = "Unprocessed",
+            subLabel = "NOVA 1",
             cardColor = Color(0x1622C55E),
             borderColor = Color(0x4422C55E),
             pillColor = Color(0x2422C55E),
             textColor = Color(0xFF4ADE80),
         )
-        2, 3 -> VerdictPalette(
-            label = "NOVA 2-3",
-            subLabel = "Processed",
-            cardColor = Color(0x16F59E0B),
-            borderColor = Color(0x44F59E0B),
-            pillColor = Color(0x24F59E0B),
-            textColor = Color(0xFFFBBF24),
+        2 -> VerdictPalette(
+            label = "Culinary Ingredient",
+            subLabel = "NOVA 2",
+            cardColor = Color(0x14FACC15),
+            borderColor = Color(0x44FACC15),
+            pillColor = Color(0x22FACC15),
+            textColor = Color(0xFFFEF08A),
+        )
+        3 -> VerdictPalette(
+            label = "Processed",
+            subLabel = "NOVA 3",
+            cardColor = Color(0x16FB923C),
+            borderColor = Color(0x44FB923C),
+            pillColor = Color(0x24FB923C),
+            textColor = Color(0xFFFED7AA),
         )
         else -> VerdictPalette(
-            label = "NOVA 4",
-            subLabel = "Ultra-processed",
+            label = "Ultra-Processed",
+            subLabel = "NOVA 4",
             cardColor = Color(0x16EF4444),
             borderColor = Color(0x44EF4444),
             pillColor = Color(0x24EF4444),
@@ -905,3 +894,18 @@ private fun ingredientPalette(novaGroup: Int): IngredientPalette =
             text = Color(0xFFFCA5A5),
         )
     }
+
+private fun analysisTitle(result: ScanResultUi): String =
+    "Analysis - ${novaGroupHeading(result.novaGroup)} - ${formatAnalysisTimestamp(result.analyzedAtMillis)}"
+
+private fun novaGroupHeading(novaGroup: Int): String =
+    when (novaGroup) {
+        1 -> "Unprocessed"
+        2 -> "Culinary Ingredient"
+        3 -> "Processed"
+        4 -> "Ultra-Processed"
+        else -> "NOVA $novaGroup"
+    }
+
+private fun formatAnalysisTimestamp(timestampMillis: Long): String =
+    SimpleDateFormat("MMM d, h:mm a", Locale.US).format(Date(timestampMillis))

@@ -6,26 +6,26 @@ class MultiProviderFoodLabelLlmWorkflow(
     private val grokWorkflow: FoodLabelLlmWorkflow,
     private val groqWorkflow: FoodLabelLlmWorkflow,
 ) : FoodLabelLlmWorkflow {
-    override suspend fun extractIngredients(
-        imagePath: String,
-        modelId: String,
-        onStatus: (String) -> Unit,
-    ): Result<IngredientExtraction> =
-        workflowFor(modelId).extractIngredients(imagePath, modelId, onStatus)
-
-    override suspend fun classifyIngredients(
+    override suspend fun classifyNova(
         extraction: IngredientExtraction,
         modelId: String,
         onStatus: (String) -> Unit,
-    ): Result<IngredientClassification> =
-        workflowFor(modelId).classifyIngredients(extraction, modelId, onStatus)
+    ): Result<NovaClassification> =
+        workflowFor(modelId).classifyNova(extraction, modelId, onStatus)
+
+    override suspend fun analyzeIngredientList(
+        extraction: IngredientExtraction,
+        modelId: String,
+        onStatus: (String) -> Unit,
+    ): Result<IngredientListAnalysis> =
+        workflowFor(modelId).analyzeIngredientList(extraction, modelId, onStatus)
 
     override suspend fun detectAllergens(
-        extraction: IngredientExtraction,
+        correctedIngredientNames: List<String>,
         modelId: String,
         onStatus: (String) -> Unit,
     ): Result<AllergenDetection> =
-        workflowFor(modelId).detectAllergens(extraction, modelId, onStatus)
+        workflowFor(modelId).detectAllergens(correctedIngredientNames, modelId, onStatus)
 
     private fun workflowFor(modelId: String): FoodLabelLlmWorkflow {
         val normalized = modelId.trim().lowercase()

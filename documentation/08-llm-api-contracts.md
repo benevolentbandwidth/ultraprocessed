@@ -20,7 +20,6 @@ Usage and cost values shown in History are currently app estimates. If an LLM pr
 - `network/llm/LlmContractRetry.kt`
 - `network/llm/MultiProviderFoodLabelLlmWorkflow.kt`
 - `network/llm/ResultChatWorkflow.kt`
-- `assets/prompts/food_label_ingredient_extraction_prompt.md`
 - `assets/prompts/food_label_classification_prompt.md`
 - `assets/prompts/food_label_allergen_prompt.md`
 - `assets/prompts/food_label_response_validation_prompt.md`
@@ -30,9 +29,8 @@ Usage and cost values shown in History are currently app estimates. If an LLM pr
 
 | Stage | Input | Output | Notes |
 | --- | --- | --- | --- |
-| Ingredient extraction | image path | `IngredientExtraction` | Vision call. Detects valid ingredient panels and returns atomic ingredient items. |
 | Validation pass | candidate JSON | repaired JSON | Second API call. Normalizes malformed ingredient/allergen text and repairs schema issues. |
-| NOVA classification | `IngredientExtraction` | `IngredientClassification` | Text-only call. Classifies the whole label and each ingredient. |
+| NOVA classification | OCR/USDA `IngredientExtraction` | `IngredientClassification` | Text-only call. Classifies the whole label and each ingredient. |
 | Allergen detection | `IngredientExtraction` | `AllergenDetection` | Text-only call. Separate from NOVA classification. |
 | Result chat | `ResultChatContext` + user question | `ResultChatReply` | Scopes questions to the current scan only. Rejects injection and off-topic prompts. |
 
@@ -50,7 +48,7 @@ Headers:
 
 Request shape:
 
-- `contents[0].parts[]` contains text and, for extraction, an inline image.
+- `contents[0].parts[]` contains text only. Zest never sends images to Gemini.
 - `generationConfig.responseMimeType` is `application/json`.
 
 ### OpenAI-Compatible Providers
@@ -79,10 +77,7 @@ sequenceDiagram
     participant Retry as LlmContractRetry
 
     UI->>Pipeline: analyzeFromImage()
-    Pipeline->>LLM: extractIngredients(image)
-    LLM->>Retry: contract parse + repair
-    Retry->>LLM: 1..3 model calls
-    LLM-->>Pipeline: IngredientExtraction
+    Pipeline->>Pipeline: ML Kit OCR creates IngredientExtraction on device
     Pipeline->>LLM: classifyIngredients(extraction)
     LLM->>Retry: contract parse + repair
     Retry->>LLM: 1..3 model calls
@@ -290,17 +285,11 @@ If all retries fail:
 
 ## Provider Notes
 
-### Gemini image extraction
+### Image handling
 
-- uses inline image data,
-- only runs for supported Gemini models,
-- carries the image and prompt in one request.
-
-### OpenAI-compatible extraction
-
-- uses `chat/completions`,
-- sends the image as a data URL,
-- relies on the provider supporting multimodal content.
+- Captured and uploaded label images stay on device.
+- ML Kit OCR creates ingredient text locally.
+- Provider workflows only receive OCR/USDA text JSON.
 
 ### Result chat
 
