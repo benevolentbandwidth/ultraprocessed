@@ -4,7 +4,7 @@ This document is the source of truth for every model call in Zest. It covers:
 
 - the request flow for each LLM stage,
 - the exact output classes the app expects,
-- the validation/repair pass,
+- deterministic request parameters,
 - and the retry behavior that keeps malformed responses out of the UI.
 
 The runtime is API-only for analysis, classification, allergen detection, and result chat. The app does not use rule-based classification as a production fallback.
@@ -19,9 +19,8 @@ Usage and cost values shown in History are currently app estimates. If an LLM pr
 - `network/llm/ResultChatWorkflow.kt`
 - `network/llm/LlmContractRetry.kt`
 - `network/llm/MultiProviderFoodLabelLlmWorkflow.kt`
-- `network/llm/ResultChatWorkflow.kt`
-- `assets/prompts/food_label_ingredient_extraction_prompt.md`
 - `assets/prompts/food_label_classification_prompt.md`
+- `assets/prompts/food_label_ingredient_analysis_prompt.md`
 - `assets/prompts/food_label_allergen_prompt.md`
 - `assets/prompts/food_label_response_validation_prompt.md`
 - `assets/prompts/food_label_result_chat_prompt.md`
@@ -30,10 +29,9 @@ Usage and cost values shown in History are currently app estimates. If an LLM pr
 
 | Stage | Input | Output | Notes |
 | --- | --- | --- | --- |
-| Ingredient extraction | image path | `IngredientExtraction` | Vision call. Detects valid ingredient panels and returns atomic ingredient items. |
-| Validation pass | candidate JSON | repaired JSON | Second API call. Normalizes malformed ingredient/allergen text and repairs schema issues. |
-| NOVA classification | `IngredientExtraction` | `IngredientClassification` | Text-only call. Classifies the whole label and each ingredient. |
-| Allergen detection | `IngredientExtraction` | `AllergenDetection` | Text-only call. Separate from NOVA classification. |
+| NOVA classification | OCR/USDA `IngredientExtraction` | `NovaClassification` | Text-only call. Classifies the whole label and gates non-food scans with `containsConsumableFoodItem`. |
+| Ingredient list analysis | OCR/USDA `IngredientExtraction` | `IngredientListAnalysis` | Text-only call. Corrects ingredient names and returns the ultra-processed subset for capsule coloration. |
+| Allergen detection | corrected ingredient names | `AllergenDetection` | Text-only call. Separate from NOVA classification and based on corrected names. |
 | Result chat | `ResultChatContext` + user question | `ResultChatReply` | Scopes questions to the current scan only. Rejects injection and off-topic prompts. |
 
 ## Transport Layer
@@ -50,8 +48,10 @@ Headers:
 
 Request shape:
 
-- `contents[0].parts[]` contains text and, for extraction, an inline image.
+- `contents[0].parts[]` contains text only. Zest never sends images to Gemini.
 - `generationConfig.responseMimeType` is `application/json`.
+- `generationConfig.temperature` is `0.0`.
+- `generationConfig.topP` is `1.0`.
 
 ### OpenAI-Compatible Providers
 
@@ -68,6 +68,10 @@ Request shape:
 - `messages[0].role = "user"`
 - `messages[0].content` contains the prompt plus the input JSON.
 - `response_format.type = "json_object"`
+- `temperature` is `0.0`.
+- `top_p` is `1.0`.
+- `frequency_penalty` is `0.0`.
+- `presence_penalty` is `0.0`.
 
 ## Request Flow
 
@@ -79,17 +83,12 @@ sequenceDiagram
     participant Retry as LlmContractRetry
 
     UI->>Pipeline: analyzeFromImage()
-    Pipeline->>LLM: extractIngredients(image)
-    LLM->>Retry: contract parse + repair
-    Retry->>LLM: 1..3 model calls
-    LLM-->>Pipeline: IngredientExtraction
-    Pipeline->>LLM: classifyIngredients(extraction)
-    LLM->>Retry: contract parse + repair
-    Retry->>LLM: 1..3 model calls
-    LLM-->>Pipeline: IngredientClassification
-    Pipeline->>LLM: detectAllergens(extraction)
-    LLM->>Retry: contract parse + repair
-    Retry->>LLM: 1..3 model calls
+    Pipeline->>Pipeline: ML Kit OCR creates IngredientExtraction on device
+    Pipeline->>LLM: classifyNova(extraction)
+    LLM-->>Pipeline: NovaClassification or non-food marker
+    Pipeline->>LLM: analyzeIngredientList(extraction)
+    LLM-->>Pipeline: correctedIngredients + ultraProcessedIngredients
+    Pipeline->>LLM: detectAllergens(correctedIngredients)
     LLM-->>Pipeline: AllergenDetection
     Pipeline-->>UI: ScanResultUi
 ```
@@ -107,19 +106,20 @@ classDiagram
         +warnings: List~String~
     }
 
-    class IngredientClassification {
+    class NovaClassification {
         +novaGroup: Int
         +summary: String
         +confidence: Float
-        +problemIngredients: List~IngredientRiskMarker~
         +warnings: List~String~
-        +ingredientAssessments: List~IngredientAssessment~
+        +containsConsumableFoodItem: Boolean
+        +rejectionReason: String
     }
 
-    class IngredientAssessment {
-        +name: String
-        +novaGroup: Int
-        +reason: String
+    class IngredientListAnalysis {
+        +correctedIngredients: List~String~
+        +ultraProcessedIngredients: List~IngredientRiskMarker~
+        +warnings: List~String~
+        +confidence: Float
     }
 
     class IngredientRiskMarker {
@@ -157,8 +157,7 @@ classDiagram
         +reason: String
     }
 
-    IngredientClassification --> IngredientAssessment
-    IngredientClassification --> IngredientRiskMarker
+    IngredientListAnalysis --> IngredientRiskMarker
     ResultChatContext --> ResultChatIngredientSignal
 ```
 
@@ -167,12 +166,12 @@ classDiagram
 ### IngredientExtraction
 
 Purpose:
-- decide whether the image contains a real ingredient panel,
-- reject invalid images,
-- and return short atomic ingredient items.
+- carry OCR/USDA text evidence into LLM stages,
+- keep image handling outside provider workflows,
+- and provide rough ingredient tokens from local normalization.
 
 Required fields:
-- `code`: `0` for valid ingredient images, `-1` for invalid images.
+- `code`: currently `0` for pipeline-created extraction.
 - `productName`: visible product name only when it is clearly present.
 - `rawText`: best-effort transcription of the ingredient panel.
 - `ingredients`: atomic ingredient tokens in reading order.
@@ -184,26 +183,43 @@ Important rules:
 - do not return long sentence-like ingredient clauses,
 - do not treat `Contains:` or `May contain` strings as ingredients.
 
-### IngredientClassification
+### NovaClassification
 
 Purpose:
 - classify the whole label with a single NOVA group,
-- assign a NOVA group to each ingredient bubble,
-- and provide a concise reason string for each output item.
+- reject non-food/non-ingredient text before later API stages run,
+- and provide a concise one-liner summary.
 
 Required fields:
-- `novaGroup`: 1..4
+- `containsConsumableFoodItem`: boolean
+- `novaGroup`: 1..4 for food scans, `0` for non-food rejection
 - `summary`: consumer-readable classification summary
+- `rejectionReason`: human-readable reason when `containsConsumableFoodItem` is false
 - `confidence`: 0.0 to 1.0
-- `problemIngredients`: items that most strongly pushed the label toward a higher NOVA group
 - `warnings`: OCR or uncertainty notes
-- `ingredientAssessments`: one object per visible ingredient
 
-Ingredient assessment rules:
-- `name` must stay close to the original ingredient wording,
-- do not emit sentence fragments,
-- do not replace the ingredient with a synonym or broader category,
-- do not mix allergen logic into NOVA coloring.
+Non-food behavior:
+- if `containsConsumableFoodItem` is false, the pipeline stops,
+- ingredient cleanup and allergen detection are skipped,
+- `AnalysisErrorScreen` shows `rejectionReason` inside its `AI response` container.
+
+### IngredientListAnalysis
+
+Purpose:
+- correct ingredient names for display,
+- return the subset of corrected ingredients that are ultra-processed or industrial formulation markers,
+- drive red/green ingredient capsule coloration.
+
+Required fields:
+- `correctedIngredients`: short ingredient names in source order
+- `ultraProcessedIngredients`: marker objects whose `name` must exactly match an item from `correctedIngredients`
+- `warnings`: uncertainty/input-quality notes
+- `confidence`: 0.0 to 1.0
+
+Capsule rules:
+- red if the corrected name appears in `ultraProcessedIngredients`,
+- green otherwise,
+- no rule-based color fallback.
 
 ### AllergenDetection
 
@@ -219,7 +235,8 @@ Required fields:
 Important rules:
 - do not infer allergens from product name,
 - do not infer from shared-facility claims unless the text explicitly says so,
-- normalize clause-like text into atomic allergen names if possible.
+- normalize clause-like text into atomic allergen names if possible,
+- use corrected ingredient names, not raw OCR text.
 
 ### ResultChatReply
 
@@ -233,45 +250,25 @@ Required fields:
 - `answer`: the user-facing answer when allowed
 - `reason`: why a response was denied or constrained
 
-## Validation Pass
+## Validation Prompt
 
-Every major stage can be followed by a validation/repair API call.
+`food_label_response_validation_prompt.md` remains in the assets folder as a schema-repair prompt, but the current production analysis path does not run a separate validation model call for the staged scan flow. Runtime parsing is handled in `LlmClassificationParser.kt` and the provider workflow parsers.
 
-Input:
-
-```json
-{
-  "operation": "classification",
-  "candidate": {
-    "...": "original model output"
-  }
-}
-```
-
-Behavior:
-
-- the second model pass sees the candidate JSON,
-- it repairs malformed JSON and sentence-like ingredient/allergen strings,
-- it must not invent new facts,
-- it may normalize output into atomic tokens,
-- if the candidate is already valid, it returns a corrected equivalent object.
-
-This validation prompt is what keeps strings like `Contains: Wheat, May Contain Milk` from reaching the UI unchanged.
+If validation is reintroduced, it must stay text-only, must not invent ingredients, and must be documented here with exact call order.
 
 ## Retry Semantics
 
 The shared retry helper in `LlmContractRetry.kt` enforces:
 
-- up to 3 attempts per contract stage,
-- increasing backoff between attempts,
-- repair prompts that include the previous validation error,
-- status messages that show the user what is happening.
+- one contract attempt in the current code (`LLM_CONTRACT_RETRY_ATTEMPTS = 1`),
+- no schema repair loop unless that constant and call sites are intentionally changed,
+- user-safe failure messages for malformed provider responses.
 
-Backoff schedule:
+Timeout retries happen at the pipeline stage level:
 
-- attempt 1: no delay
-- attempt 2: 1.2 seconds
-- attempt 3: 2.4 seconds
+- `runLlmStage` wraps each LLM call in `withTimeout`,
+- `LLM_TIMEOUT_RETRY_ATTEMPTS = 2`,
+- timeout failures are retried, then surfaced as a stage-specific timeout message.
 
 Contract violations that trigger retries include:
 
@@ -286,21 +283,15 @@ If all retries fail:
 
 - the API layer throws a user-safe message,
 - the UI should not display raw schema field names,
-- the analysis screen should show a generic parse failure or fallback message.
+- the analysis screen should show a generic parse failure or the API-readable rejection reason when the model explicitly marks the scan as non-food.
 
 ## Provider Notes
 
-### Gemini image extraction
+### Image handling
 
-- uses inline image data,
-- only runs for supported Gemini models,
-- carries the image and prompt in one request.
-
-### OpenAI-compatible extraction
-
-- uses `chat/completions`,
-- sends the image as a data URL,
-- relies on the provider supporting multimodal content.
+- Captured and uploaded label images stay on device.
+- ML Kit OCR creates ingredient text locally.
+- Provider workflows only receive OCR/USDA text JSON.
 
 ### Result chat
 
@@ -320,7 +311,8 @@ Then ensure:
 
 - it uses the same prompt assets,
 - it participates in `MultiProviderFoodLabelLlmWorkflow`,
-- it respects the 3-attempt contract retry helper,
+- it respects deterministic request parameters,
+- it uses timeout-only retries unless contract retry behavior is deliberately expanded,
 - it returns the same output classes listed above.
 
 ## Operational Rule

@@ -4,15 +4,17 @@ import android.content.Context
 import com.b2.ultraprocessed.barcode.BarcodeResult
 import com.b2.ultraprocessed.barcode.BarcodeScanner
 import com.b2.ultraprocessed.barcode.MlKitBarcodeScanner
+import com.b2.ultraprocessed.classify.IngredientAssessment
 import com.b2.ultraprocessed.ingredients.IngredientTextNormalizer
-import com.b2.ultraprocessed.network.llm.AllergenDetection
 import com.b2.ultraprocessed.classify.ClassificationResult
-import com.b2.ultraprocessed.analysis.UsageEstimateCalculator
 import com.b2.ultraprocessed.network.llm.FoodLabelLlmWorkflow
 import com.b2.ultraprocessed.network.llm.GeminiFoodLabelLlmWorkflow
+import com.b2.ultraprocessed.network.llm.IngredientListAnalysis
 import com.b2.ultraprocessed.network.llm.IngredientClassification
 import com.b2.ultraprocessed.network.llm.IngredientExtraction
+import com.b2.ultraprocessed.network.llm.IngredientRiskMarker
 import com.b2.ultraprocessed.network.llm.MultiProviderFoodLabelLlmWorkflow
+import com.b2.ultraprocessed.network.llm.NovaClassification
 import com.b2.ultraprocessed.network.llm.OpenAiCompatibleFoodLabelLlmWorkflow
 import com.b2.ultraprocessed.network.llm.SecretLlmApiKeyProvider
 import com.b2.ultraprocessed.network.usda.SecretUsdaApiKeyProvider
@@ -24,11 +26,7 @@ import com.b2.ultraprocessed.ocr.OcrPipeline
 import com.b2.ultraprocessed.ocr.OcrResult
 import com.b2.ultraprocessed.storage.secrets.SecretKeyManager
 import com.b2.ultraprocessed.ui.ClassificationUiMapper
-import com.b2.ultraprocessed.ui.ProblemIngredient
-import com.b2.ultraprocessed.ui.ScanResultUi
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 
 class FoodAnalysisPipeline(
@@ -39,35 +37,21 @@ class FoodAnalysisPipeline(
 ) {
     suspend fun analyzeFromImage(
         imagePath: String,
-        modelId: String = DEFAULT_VLM_MODEL_ID,
+        modelId: String = DEFAULT_MODEL_ID,
         onStage: (AnalysisStage) -> Unit = {},
         onStatus: (String) -> Unit = {},
     ): Result<AnalysisReport> {
         onStage(AnalysisStage.AnalysingImage)
-        val workflow = llmWorkflow ?: return Result.failure(
-            Exception("API-only image analysis requires a configured LLM workflow."),
-        )
-
-        val llmFallbackWarnings = mutableListOf<String>()
-        val llmResult = analyzeImageWithLlmWorkflow(
-            workflow = workflow,
-            imagePath = imagePath,
-            modelId = modelId,
-            onStage = onStage,
-            onStatus = onStatus,
-        )
-        if (llmResult != null) {
-            return llmResult
-        }
-        llmFallbackWarnings += "LLM image workflow unavailable; using OCR text for API analysis."
-        onStatus("Using OCR text for API analysis. OCR may contain mistakes.")
-
         onStage(AnalysisStage.ExtractingIngredients)
+        onStatus("Reading label text on device. Images are never sent to the API.")
         val ocr = ocrPipeline.recognizeText(imagePath)
         return when (ocr) {
-            is OcrResult.Failure -> Result.failure(
-                Exception(ocr.message.toFriendlyAnalysisMessage("Could not read enough ingredient text. Please try again.")),
-            )
+            is OcrResult.Failure -> {
+                AnalysisDebugLogger.log("ocr_failure", ocr.message)
+                Result.failure(
+                    Exception(ocr.message.toFriendlyAnalysisMessage("Could not read enough ingredient text. Please try again.")),
+                )
+            }
             is OcrResult.Success -> classifyFromIngredientsTextApiOnly(
                 rawText = ocr.rawText,
                 sourceImagePath = imagePath,
@@ -75,7 +59,7 @@ class FoodAnalysisPipeline(
                 sourceLabel = "OCR",
                 sourceType = AnalysisSourceType.Ocr,
                 productNameOverride = null,
-                warnings = llmFallbackWarnings.toList(),
+                warnings = listOf("Image text was extracted on device with ML Kit OCR."),
                 onStage = onStage,
                 onStatus = onStatus,
             )
@@ -85,7 +69,7 @@ class FoodAnalysisPipeline(
     suspend fun analyzeFromBarcode(
         barcodeCode: String,
         sourceImagePath: String?,
-        modelId: String = DEFAULT_VLM_MODEL_ID,
+        modelId: String = DEFAULT_MODEL_ID,
         onStage: (AnalysisStage) -> Unit = {},
         onStatus: (String) -> Unit = {},
     ): Result<AnalysisReport> {
@@ -127,7 +111,7 @@ class FoodAnalysisPipeline(
 
     suspend fun analyzeFromBarcodeImage(
         imagePath: String,
-        modelId: String = DEFAULT_VLM_MODEL_ID,
+        modelId: String = DEFAULT_MODEL_ID,
         onStage: (AnalysisStage) -> Unit = {},
         onStatus: (String) -> Unit = {},
     ): Result<AnalysisReport> {
@@ -153,7 +137,7 @@ class FoodAnalysisPipeline(
     private suspend fun fallbackToImageOrError(
         sourceImagePath: String?,
         error: String,
-        modelId: String = DEFAULT_VLM_MODEL_ID,
+        modelId: String = DEFAULT_MODEL_ID,
         onStage: (AnalysisStage) -> Unit = {},
         onStatus: (String) -> Unit = {},
     ): Result<AnalysisReport> {
@@ -164,11 +148,11 @@ class FoodAnalysisPipeline(
                 return Result.success(
                     report.copy(
                         sourceType = AnalysisSourceType.UsdaPlusOcr,
-                        warnings = report.warnings + error + " Falling back to image analysis.",
+                        warnings = report.warnings + error + " Falling back to on-device OCR.",
                         scanResult = report.scanResult.copy(
-                            sourceLabel = "USDA+Image",
+                            sourceLabel = "USDA+OCR",
                             warnings = report.scanResult.warnings + error +
-                                " Falling back to image analysis.",
+                                " Falling back to on-device OCR.",
                         ),
                     ),
                 )
@@ -187,12 +171,13 @@ class FoodAnalysisPipeline(
         warnings: List<String>,
         scannedBarcode: String? = null,
         brandOwner: String? = null,
-        allergens: List<String> = emptyList(),
         rawIngredientText: String = rawText,
         onStage: (AnalysisStage) -> Unit = {},
         onStatus: (String) -> Unit = {},
     ): Result<AnalysisReport> {
         val normalized = IngredientTextNormalizer.normalize(rawText)
+        AnalysisDebugLogger.log("text_raw", rawText)
+        AnalysisDebugLogger.log("text_normalized", normalized)
         if (normalized.length < MIN_NORMALIZED_LENGTH) {
             return Result.failure(
                 Exception("Could not read enough ingredient text. Please try again."),
@@ -214,40 +199,79 @@ class FoodAnalysisPipeline(
             confidence = 0.6f,
             warnings = emptyList(),
         )
+        AnalysisDebugLogger.log("classification_input", extraction.toDebugString())
 
         onStage(AnalysisStage.AnalysingIngredients)
-        val classification = runLlmStage(
-            stageName = "llm_classify_from_text",
+        val nova = runLlmStage(
+            stageName = "llm_classify_nova",
             timeoutMillis = CLASSIFICATION_TIMEOUT_MILLIS,
-            timeoutMessage = "API text classification timed out.",
+            timeoutMessage = "API NOVA classification timed out.",
         ) {
-            workflow.classifyIngredients(extraction, modelId, onStatus)
+            onStatus("Classifying NOVA group")
+            workflow.classifyNova(extraction, modelId, onStatus)
         }.getOrElse { error ->
-            return Result.failure(
-                Exception(
-                    error.toFriendlyAnalysisMessage("API text classification unavailable."),
-                ),
+            val message = error.toFriendlyAnalysisMessage("API NOVA classification unavailable.")
+            AnalysisDebugLogger.log("classification_failure", message)
+            return Result.failure(Exception(message))
+        }.also {
+            AnalysisDebugLogger.log(
+                "nova_output",
+                "containsFood=${it.containsConsumableFoodItem} nova=${it.novaGroup} " +
+                    "confidence=${it.confidence} summary=${it.summary} " +
+                    "rejectionReason=${it.rejectionReason} warnings=${it.warnings}",
             )
         }
+        if (!nova.containsConsumableFoodItem) {
+            val message = nova.rejectionReason.ifBlank {
+                nova.summary.ifBlank { "Text doesn't contain any consumable food item." }
+            }
+            AnalysisDebugLogger.log("classification_non_food_text", message)
+            return Result.failure(NonConsumableFoodTextException(message))
+        }
+
+        val ingredientList = runLlmStage(
+            stageName = "llm_analyze_ingredient_list",
+            timeoutMillis = INGREDIENT_LIST_TIMEOUT_MILLIS,
+            timeoutMessage = "API ingredient list cleanup timed out.",
+        ) {
+            onStatus("Correcting ingredient names")
+            workflow.analyzeIngredientList(extraction, modelId, onStatus)
+        }.getOrElse { error ->
+            val message = error.toFriendlyAnalysisMessage("API ingredient list cleanup unavailable.")
+            AnalysisDebugLogger.log("ingredient_list_failure", message)
+            return Result.failure(Exception(message))
+        }.also {
+            AnalysisDebugLogger.log(
+                "ingredient_list_output",
+                "corrected=${it.correctedIngredients} ultraProcessed=${it.ultraProcessedIngredients} warnings=${it.warnings}",
+            )
+        }
+
         val allergens = runLlmStage(
-            stageName = "llm_detect_allergens_from_text",
+            stageName = "llm_detect_allergens_from_corrected_ingredients",
             timeoutMillis = ALLERGEN_TIMEOUT_MILLIS,
             timeoutMessage = "API allergen detection timed out.",
         ) {
-            workflow.detectAllergens(extraction, modelId, onStatus)
+            onStatus("Checking common allergens")
+            workflow.detectAllergens(ingredientList.correctedIngredients, modelId, onStatus)
         }.getOrElse {
-            AllergenDetection(
-                allergens = emptyList(),
-                warnings = listOf(it.toFriendlyAnalysisMessage("Allergen detection unavailable.")),
-                confidence = 0f,
+            val message = it.toFriendlyAnalysisMessage("Allergen detection unavailable.")
+            AnalysisDebugLogger.log("allergen_failure", message)
+            return Result.failure(Exception(message))
+        }.also {
+            AnalysisDebugLogger.log(
+                "allergen_output",
+                "allergens=${it.allergens} confidence=${it.confidence} warnings=${it.warnings}",
             )
         }
+        val classification = buildClassificationFromApiStages(nova, ingredientList)
+        val correctedIngredientLine = ingredientList.correctedIngredients.joinToString(", ")
         val scanResult = ClassificationUiMapper.toScanResultUi(
             classification = classification.toClassificationResult(),
-            normalizedIngredientLine = normalized,
+            normalizedIngredientLine = correctedIngredientLine,
             productNameOverride = productNameOverride,
             sourceLabel = sourceLabel,
-            warnings = warnings + classification.warnings + allergens.warnings,
+            warnings = warnings + classification.warnings + ingredientList.warnings + allergens.warnings,
             labelImagePath = sourceImagePath,
             scannedBarcode = scannedBarcode,
             brandOwner = brandOwner,
@@ -256,7 +280,7 @@ class FoodAnalysisPipeline(
             usageEstimate = UsageEstimateCalculator.estimateTextWorkflow(
                 modelId = modelId,
                 ingredientText = rawIngredientText,
-                problemIngredientCount = classification.problemIngredients.size,
+                problemIngredientCount = ingredientList.ultraProcessedIngredients.size,
                 allergenCount = allergens.allergens.size,
             ),
         )
@@ -265,25 +289,23 @@ class FoodAnalysisPipeline(
             AnalysisReport(
                 sourceType = sourceType,
                 productName = scanResult.productName,
-                ingredientsTextUsed = normalized,
-                warnings = warnings + classification.warnings + allergens.warnings,
+                ingredientsTextUsed = correctedIngredientLine,
+                warnings = warnings + classification.warnings + ingredientList.warnings + allergens.warnings,
                 scanResult = scanResult,
             ),
         )
     }
 
     companion object {
-        const val INVALID_IMAGE_CODE: Int = -1
-        const val INVALID_IMAGE_ERROR: String =
-            "Invalid image. Please scan a food ingredient box or ingredient list."
         const val MIN_NORMALIZED_LENGTH: Int = 12
-        const val DEFAULT_VLM_MODEL_ID: String = "gemini-2.0-flash"
-        private const val EXTRACTION_TIMEOUT_MILLIS = 25_000L
-        private const val CLASSIFICATION_TIMEOUT_MILLIS = 18_000L
+        const val DEFAULT_MODEL_ID: String = "gemini-2.0-flash"
+        private const val CLASSIFICATION_TIMEOUT_MILLIS = 35_000L
+        private const val INGREDIENT_LIST_TIMEOUT_MILLIS = 35_000L
         private const val ALLERGEN_TIMEOUT_MILLIS = 12_000L
 
         fun create(context: Context): FoodAnalysisPipeline {
             val appContext = context.applicationContext
+            AnalysisDebugLogger.initialize(appContext)
             return FoodAnalysisPipeline(
                 ocrPipeline = MlKitOcrPipeline(appContext),
                 barcodeScanner = MlKitBarcodeScanner(appContext),
@@ -330,151 +352,43 @@ class FoodAnalysisPipeline(
             )
         }
     }
-
-    private suspend fun analyzeImageWithLlmWorkflow(
-        workflow: FoodLabelLlmWorkflow,
-        imagePath: String,
-        modelId: String,
-        onStage: (AnalysisStage) -> Unit,
-        onStatus: (String) -> Unit,
-    ): Result<AnalysisReport>? {
-        onStage(AnalysisStage.ExtractingIngredients)
-        val extraction = runLlmStage(
-            stageName = "llm_extract_ingredients",
-            timeoutMillis = EXTRACTION_TIMEOUT_MILLIS,
-            timeoutMessage = "Ingredient extraction timed out. Please try again with a clearer label image.",
-        ) {
-            workflow.extractIngredients(imagePath, modelId, onStatus)
-        }.getOrElse { error ->
-            if (error is LlmStageTimeoutException) {
-                return Result.failure(Exception(error.message.toFriendlyAnalysisMessage(INVALID_IMAGE_ERROR)))
-            }
-            AnalysisTelemetry.event("llm_extraction_unavailable")
-            AnalysisTelemetry.event("llm_extraction_error=${error.message.orEmpty()}")
-            onStatus("The AI response could not be parsed after several retries. Falling back to OCR.")
-            return null
-        }
-        if (extraction.code == INVALID_IMAGE_CODE) {
-            AnalysisTelemetry.event("invalid_image")
-            return Result.failure(Exception(INVALID_IMAGE_ERROR))
-        }
-        val ingredientsText = extraction.ingredients.joinToString(", ")
-            .ifBlank { extraction.rawText }
-        if (IngredientTextNormalizer.normalize(ingredientsText).length < MIN_NORMALIZED_LENGTH) {
-            return Result.failure(Exception(INVALID_IMAGE_ERROR))
-        }
-
-        onStage(AnalysisStage.AnalysingIngredients)
-        val (classificationResult, allergenResult) = coroutineScope {
-            val classification = async {
-                runLlmStage(
-                    stageName = "llm_classify_ingredients",
-                    timeoutMillis = CLASSIFICATION_TIMEOUT_MILLIS,
-                    timeoutMessage = "Ingredient analysis timed out.",
-                ) {
-                    workflow.classifyIngredients(extraction, modelId, onStatus)
-                }
-            }
-            val allergens = async {
-                runLlmStage(
-                    stageName = "llm_detect_allergens",
-                    timeoutMillis = ALLERGEN_TIMEOUT_MILLIS,
-                    timeoutMessage = "Allergen detection timed out for this scan.",
-                ) {
-                    workflow.detectAllergens(extraction, modelId, onStatus)
-                }
-            }
-            classification.await() to allergens.await()
-        }
-        val classification = classificationResult.getOrNull()
-        val allergens = allergenResult.getOrElse { error ->
-            AllergenDetection(
-                allergens = emptyList(),
-                warnings = listOf(error.toFriendlyAnalysisMessage("Allergen detection was unavailable for this scan.")),
-                confidence = 0f,
-            )
-        }
-
-        return if (classification != null) {
-            onStage(AnalysisStage.Completed)
-            Result.success(
-                buildLlmAnalysisReport(
-                    imagePath = imagePath,
-                    modelId = modelId,
-                    extraction = extraction,
-                    classification = classification,
-                    allergens = allergens,
-                ),
-            )
-        } else {
-            val classificationWarning = classificationResult.exceptionOrNull()?.message
-                ?.toFriendlyAnalysisMessage("LLM classification was unavailable.")
-                ?: "LLM classification was unavailable."
-            classifyFromIngredientsTextApiOnly(
-                rawText = ingredientsText,
-                sourceImagePath = imagePath,
-                modelId = modelId,
-                sourceLabel = "LLM extraction + API text",
-                sourceType = AnalysisSourceType.Vlm,
-                productNameOverride = extraction.productName,
-                warnings = extraction.warnings +
-                    allergens.warnings +
-                    classificationWarning,
-                allergens = allergens.allergens,
-                rawIngredientText = extraction.rawText.ifBlank { ingredientsText },
-                onStage = onStage,
-                onStatus = onStatus,
-            )
-        }
-    }
-
-    private fun buildLlmAnalysisReport(
-        imagePath: String,
-        modelId: String,
-        extraction: IngredientExtraction,
-        classification: IngredientClassification,
-        allergens: AllergenDetection,
-    ): AnalysisReport {
-        val ingredientsText = extraction.ingredients.joinToString(", ")
-            .ifBlank { extraction.rawText }
-        val warnings = extraction.warnings + classification.warnings + allergens.warnings
-        val scanResult = ScanResultUi(
-            productName = extraction.productName,
-            novaGroup = classification.novaGroup,
-            summary = classification.summary,
-            problemIngredients = classification.problemIngredients.map {
-                ProblemIngredient(name = it.name, reason = it.reason)
-            },
-            allIngredients = extraction.ingredients.ifEmpty {
-                IngredientTextNormalizer.normalize(ingredientsText)
-                    .split(',', ';')
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-            },
-            engineLabel = "Gemini staged LLM ($modelId)",
-            confidence = minOf(extraction.confidence, classification.confidence),
-            sourceLabel = "LLM image workflow",
-            warnings = warnings,
-            labelImagePath = imagePath,
-            allergens = allergens.allergens,
-            rawIngredientText = extraction.rawText.ifBlank { ingredientsText },
-            usageEstimate = UsageEstimateCalculator.estimateImageWorkflow(
-                modelId = modelId,
-                ingredientText = ingredientsText,
-                problemIngredientCount = classification.problemIngredients.size,
-                allergenCount = allergens.allergens.size,
-            ),
-        )
-        return AnalysisReport(
-            sourceType = AnalysisSourceType.Vlm,
-            productName = scanResult.productName,
-            ingredientsTextUsed = ingredientsText,
-            warnings = warnings,
-            scanResult = scanResult,
-        )
-    }
-
 }
+
+private fun IngredientExtraction.toDebugString(): String =
+    "productName=$productName confidence=$confidence rawText=$rawText ingredients=$ingredients warnings=$warnings"
+
+private fun buildClassificationFromApiStages(
+    nova: NovaClassification,
+    ingredientList: IngredientListAnalysis,
+): IngredientClassification {
+    val ultraProcessedKeys = ingredientList.ultraProcessedIngredients
+        .map { it.name.normalizedIngredientKey() }
+        .toSet()
+    return IngredientClassification(
+        novaGroup = nova.novaGroup,
+        summary = nova.summary,
+        confidence = minOf(nova.confidence, ingredientList.confidence),
+        problemIngredients = ingredientList.ultraProcessedIngredients,
+        warnings = nova.warnings + ingredientList.warnings,
+        ingredientAssessments = ingredientList.correctedIngredients.map { ingredient ->
+            val isUltraProcessed = ingredient.normalizedIngredientKey() in ultraProcessedKeys
+            IngredientAssessment(
+                name = ingredient,
+                novaGroup = if (isUltraProcessed) 4 else 1,
+                reason = if (isUltraProcessed) {
+                    ingredientList.ultraProcessedIngredients
+                        .firstOrNull { it.name.normalizedIngredientKey() == ingredient.normalizedIngredientKey() }
+                        ?.reason.orEmpty()
+                } else {
+                    ""
+                },
+            )
+        },
+    )
+}
+
+private fun String.normalizedIngredientKey(): String =
+    lowercase().filter { it.isLetterOrDigit() }
 
 private class LlmStageTimeoutException(message: String) : Exception(message)
 
@@ -485,22 +399,40 @@ private suspend fun <T> runLlmStage(
     block: suspend () -> Result<T>,
 ): Result<T> {
     val startedAt = AnalysisTelemetry.markStart()
-    return try {
-        val result = withTimeout(timeoutMillis) { block() }
+    AnalysisDebugLogger.log(stageName, "start timeoutMs=$timeoutMillis")
+    repeat(LLM_TIMEOUT_RETRY_ATTEMPTS) { index ->
+        val attempt = index + 1
+        val result = try {
+            withTimeout(timeoutMillis) { block() }
+        } catch (e: TimeoutCancellationException) {
+            AnalysisTelemetry.stageFailed(stageName, startedAt, "timeout")
+            AnalysisDebugLogger.log(stageName, "timeout attempt=$attempt")
+            if (attempt < LLM_TIMEOUT_RETRY_ATTEMPTS) {
+                return@repeat
+            }
+            return Result.failure(LlmStageTimeoutException(timeoutMessage))
+        }
         result
-            .onSuccess { AnalysisTelemetry.stageSucceeded(stageName, startedAt) }
+            .onSuccess {
+                AnalysisTelemetry.stageSucceeded(stageName, startedAt)
+                AnalysisDebugLogger.log(stageName, "success")
+            }
             .onFailure {
                 AnalysisTelemetry.stageFailed(
                     stageName,
                     startedAt,
                     it::class.simpleName ?: "unknown",
                 )
+                AnalysisDebugLogger.log(stageName, "failure type=${it::class.simpleName} message=${it.message}")
             }
-    } catch (e: TimeoutCancellationException) {
-        AnalysisTelemetry.stageFailed(stageName, startedAt, "timeout")
-        Result.failure(LlmStageTimeoutException(timeoutMessage))
+        return result
     }
+    return Result.failure(LlmStageTimeoutException(timeoutMessage))
 }
+
+private const val LLM_TIMEOUT_RETRY_ATTEMPTS = 2
+
+private class NonConsumableFoodTextException(message: String) : Exception(message)
 
 private fun IngredientClassification.toClassificationResult(): ClassificationResult =
     ClassificationResult(

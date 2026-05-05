@@ -25,17 +25,44 @@ In practice, Zest is about:
 - Use the same Zest splash, launcher icon, typography, and sound setting across the app.
 - Keep API keys encrypted on device.
 
-## Features
+## Feature List
 
-- Fast label analysis.
-- Compact, easy-to-read results.
-- Separate ingredient and allergen sections.
-- Local scan history.
-- Estimated local usage summary for tokens and cost.
-- Optional barcode lookup.
-- Optional model metadata in Settings.
-- Optional app sound effects.
-- No sign-in required.
+Zest is designed as a consumer-grade ingredient intelligence layer: fast enough for the grocery aisle, structured enough for product decisions, and privacy-conscious enough for everyday trust.
+
+### Consumer Value
+
+- Instant ingredient clarity: scan a package label and turn dense ingredient text into a plain-language processing assessment.
+- NOVA-style classification: see whether a product is closer to minimally processed, processed culinary, processed, or ultra-processed.
+- Red/green ingredient capsules: quickly spot which corrected ingredient names were identified as ultra-processed markers.
+- Separate allergen intelligence: common US / Western allergens appear in their own section instead of being mixed into processing signals.
+- Human-readable summaries: each result includes a concise, consumer-friendly one-liner that explains what the ingredient list suggests.
+- Non-food rejection: if the scan does not contain a consumable food item or ingredient evidence, Zest stops early and explains why.
+
+### Trust And Privacy
+
+- Images stay on device: captured and uploaded label images are never sent to AI providers.
+- On-device OCR first: ML Kit extracts text locally before any model call happens.
+- Text-only AI analysis: providers receive extracted ingredient text, not the original image.
+- Encrypted key storage: LLM and USDA API keys are stored through encrypted on-device storage.
+- Local-first history: scan results and failed scans are stored locally through Room.
+- No account required: users can analyze labels without sign-in or cloud sync.
+
+### Product Intelligence
+
+- Staged AI pipeline: one call for NOVA classification, one call for ingredient cleanup and ultra-processed marker detection, one call for allergens, and chat only on demand.
+- Deterministic model settings: API calls use low-variance parameters for more consistent product behavior.
+- Result-scoped chat: users can ask follow-up questions about the current scan without turning the app into a general chatbot.
+- Barcode support: barcode scans can enrich analysis through USDA data when configured.
+- Failed scan recovery: failed image-based scans can appear in History with a rerun path.
+- Usage visibility: History shows estimated token and cost usage by model/provider.
+
+### Operational Readiness
+
+- Professional Compose UI: shared typography, brand assets, spacing, colors, splash, launcher icon, and sound settings.
+- System back handling: Android back and edge-swipe gestures route within the app instead of accidentally closing it.
+- Build safeguards: source-tree checks block retired demo, legacy, rule-based, and dataless source files before build work proceeds.
+- Release-minded storage: Room migrations preserve history and support failed-scan records.
+- Developer documentation: architecture, pipeline contracts, security, testing, and roadmap docs are maintained under `documentation/`.
 
 ## How To Set It Up
 
@@ -74,7 +101,7 @@ Zest is designed to keep your data local by default.
 - Saved keys are not shown back in plain text.
 - No sign-in is required.
 
-When you analyze a label, the app sends the image or extracted ingredient data to the selected API provider only if you have configured a key for that provider.
+When you analyze a label, OCR runs on device first. The app never sends captured or uploaded label images to the API provider. Only extracted ingredient text is sent for classification and allergen detection when you have configured a key.
 
 ## Important Notes
 

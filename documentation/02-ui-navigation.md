@@ -1,6 +1,7 @@
 # UI And Navigation
 
 The UI is implemented with Jetpack Compose and a small internal destination enum instead of a navigation framework. This keeps the current app shell simple while the product has a linear scanner-oriented flow.
+Android system back and left-edge swipe gestures are handled by `BackHandler` in `UltraProcessedApp.kt`, so a back gesture routes within the app instead of closing the Activity from most screens.
 
 The UI design system is shared across screens:
 
@@ -38,10 +39,25 @@ stateDiagram-v2
     Analyzing --> AnalysisError: failure
     Results --> Scanner: scan again
     Results --> History
+    History --> Results: back if opened from Results
     AnalysisError --> Scanner
     Settings --> Scanner
     History --> Scanner
 ```
+
+## Back Gesture Contract
+
+Current behavior in `UltraProcessedApp.kt`:
+
+- `Scanner`: consumes system back as a no-op so accidental left-edge swipes do not close the app.
+- `Settings`: returns to the previous app page when available, otherwise Scanner.
+- `History`: returns to Results when opened from Results, otherwise Scanner.
+- `Results`: returns to Scanner.
+- `AnalysisError`: clears the error message and returns to Scanner.
+- `Analyzing`: returns to Scanner.
+- `Splash`: does not intercept back.
+
+Implementation note: the app tracks `destination` and `previousDestination`. This is intentionally lightweight and should be replaced by a centralized navigation stack in v2. See [09-todo-roadmap.md](09-todo-roadmap.md).
 
 ## State Ownership
 
@@ -98,13 +114,13 @@ The primary button text is mode-aware. Ingredient mode shows `Scan Label`; barco
 flowchart TB
     Header[Analysis header]
     Verdict[Classification card]
+    Summary[One-liner analysis block]
     Ingredients[Ingredients chips]
     Allergens[Common allergens present]
     Chat[Chat more about this scan]
-    Warning[Data warning]
     Footer[Action footer]
 
-    Header --> Verdict --> Ingredients --> Allergens --> Chat --> Warning --> Footer
+    Header --> Verdict --> Summary --> Ingredients --> Allergens --> Chat --> Footer
 ```
 
 ## Screen Ownership Summary

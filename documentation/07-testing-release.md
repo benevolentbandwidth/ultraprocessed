@@ -38,7 +38,7 @@ Covered areas:
 - USDA JSON parsing.
 - USDA repository UPC matching and cache behavior.
 - Food analysis pipeline staged API workflow and invalid-image handling.
-- Prompt contract parsing for extraction, classification, allergen detection, and result chat.
+- Prompt contract parsing for NOVA classification, ingredient analysis, allergen detection, validation prompt presence, and result chat.
 
 ## Android Tests
 
@@ -98,11 +98,14 @@ flowchart TB
 - Room migration instrumentation test compiles.
 - Settings saves API keys without showing saved values again.
 - Image analysis uses the user-provided LLM key only through `SecretKeyManager`.
-- Prompt assets exist for extraction, classification, and allergen detection.
+- Prompt assets exist for NOVA classification, ingredient analysis, allergen detection, response validation, and result chat.
 - Barcode lookup fails gracefully without a USDA key.
 - Scan history persists after navigating away from Results.
+- Failed image analyses can persist in History with a failure message and a rerun action when an image path exists.
+- System back and left-edge swipe stay inside the app from Scanner, Settings, History, Results, Analyzing, and AnalysisError.
 - Delete from History removes the Room row and locally stored scan image when the image is under app-owned storage.
 - Result page shows compact ingredient bubbles without rule-based sublabels.
+- Non-food/non-ingredient scans show the API's readable reason inside the Analysis Error screen's `AI response` container.
 - Analysis and results screens use the shared type scale, spacing, and Zest color scheme.
 - Native launcher icon and splash resources use the shared Zest mark.
 - Compose splash appears on cold start before the scanner home screen.

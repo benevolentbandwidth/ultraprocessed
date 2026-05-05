@@ -4,7 +4,7 @@ import java.io.IOException
 import org.json.JSONObject
 import kotlinx.coroutines.delay
 
-internal const val LLM_CONTRACT_RETRY_ATTEMPTS: Int = 3
+internal const val LLM_CONTRACT_RETRY_ATTEMPTS: Int = 1
 
 internal suspend fun <T> retryContractParse(
     operationLabel: String,

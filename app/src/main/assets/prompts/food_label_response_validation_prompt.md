@@ -15,7 +15,6 @@ Task:
 - If the candidate is already valid, return it unchanged except for harmless normalization.
 
 Stage rules:
-- `ingredient extraction`: `ingredients` must contain only short ingredient-like tokens. Remove lines like `Contains: Wheat` or `May contain milk` from `ingredients`. If no valid ingredients remain, return `code = -1` with the invalid-image warning.
 - `classification`: `ingredientAssessments[*].name` must stay close to the original ingredient text and must not contain sentence fragments or advisory text.
 - `allergen detection`: `allergens` must contain standalone allergen names only. Split combined clauses into individual allergens if needed. Convert text such as `Contains: Wheat, May Contain Milk` into `["Wheat", "Milk"]`.
 

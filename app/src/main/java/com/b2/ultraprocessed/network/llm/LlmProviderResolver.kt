@@ -26,19 +26,19 @@ object LlmProviderResolver {
                 modelId = "gemini-2.0-flash",
                 modelName = "Gemini 2.0 Flash",
                 provider = "Gemini (Google)",
-                acceptsImages = true,
+                acceptsImages = false,
             )
             "openai" -> LlmProviderModelMetadata(
                 modelId = "gpt-4.1-mini",
                 modelName = "GPT-4.1 mini",
                 provider = "OpenAI",
-                acceptsImages = true,
+                acceptsImages = false,
             )
             "grok" -> LlmProviderModelMetadata(
                 modelId = "grok-2-vision-latest",
-                modelName = "Grok 2 Vision",
+                modelName = "Grok 2",
                 provider = "Grok (xAI)",
-                acceptsImages = true,
+                acceptsImages = false,
             )
             "groq" -> LlmProviderModelMetadata(
                 modelId = "llama-3.1-8b-instant",

@@ -6,7 +6,6 @@ enum class AnalysisSourceType {
     Barcode,
     Ocr,
     UsdaPlusOcr,
-    Vlm,
 }
 
 data class AnalysisReport(

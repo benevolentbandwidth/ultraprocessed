@@ -350,7 +350,7 @@ fun ScannerScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.86f)),
+                                    .background(Color.Black.copy(alpha = 0.18f)),
                             )
                         }
                     } else {
@@ -797,8 +797,8 @@ private fun ScannerCorner(
     verticalAlignment: Alignment.Vertical,
     modifier: Modifier = Modifier,
 ) {
-    val glowColor = Emerald400.copy(alpha = 0.42f)
-    val coreColor = Emerald400.copy(alpha = 0.68f)
+    val glowColor = Emerald400.copy(alpha = 0.24f)
+    val coreColor = Emerald400.copy(alpha = 0.38f)
     Box(
         modifier = modifier.size(48.dp),
     ) {
@@ -812,7 +812,7 @@ private fun ScannerCorner(
                         else -> Alignment.CenterEnd
                     },
                 )
-                .graphicsLayer { alpha = 0.72f }
+                .graphicsLayer { alpha = 0.48f }
                 .background(
                     Brush.verticalGradient(
                         when (verticalAlignment) {
@@ -833,7 +833,7 @@ private fun ScannerCorner(
                         else -> Alignment.BottomCenter
                     },
                 )
-                .graphicsLayer { alpha = 0.72f }
+                .graphicsLayer { alpha = 0.48f }
                 .background(
                     Brush.horizontalGradient(
                         when (horizontalAlignment) {

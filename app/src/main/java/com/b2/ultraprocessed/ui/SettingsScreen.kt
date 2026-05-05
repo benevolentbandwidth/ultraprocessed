@@ -656,7 +656,7 @@ private fun SecureApiKeyCard(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Accepts images: ${if (it.acceptsImages) "Yes" else "No"}",
+                                text = "Images sent to API: Never",
                                 color = Color.White.copy(alpha = 0.58f),
                                 fontSize = SettingsType.Body,
                             )

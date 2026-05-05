@@ -3,20 +3,20 @@ package com.b2.ultraprocessed.network.llm
 import com.b2.ultraprocessed.classify.IngredientAssessment
 
 interface FoodLabelLlmWorkflow {
-    suspend fun extractIngredients(
-        imagePath: String,
-        modelId: String,
-        onStatus: (String) -> Unit = {},
-    ): Result<IngredientExtraction>
-
-    suspend fun classifyIngredients(
+    suspend fun classifyNova(
         extraction: IngredientExtraction,
         modelId: String,
         onStatus: (String) -> Unit = {},
-    ): Result<IngredientClassification>
+    ): Result<NovaClassification>
+
+    suspend fun analyzeIngredientList(
+        extraction: IngredientExtraction,
+        modelId: String,
+        onStatus: (String) -> Unit = {},
+    ): Result<IngredientListAnalysis>
 
     suspend fun detectAllergens(
-        extraction: IngredientExtraction,
+        correctedIngredientNames: List<String>,
         modelId: String,
         onStatus: (String) -> Unit = {},
     ): Result<AllergenDetection>
@@ -38,6 +38,22 @@ data class IngredientClassification(
     val problemIngredients: List<IngredientRiskMarker>,
     val warnings: List<String>,
     val ingredientAssessments: List<IngredientAssessment> = emptyList(),
+)
+
+data class NovaClassification(
+    val novaGroup: Int,
+    val summary: String,
+    val confidence: Float,
+    val warnings: List<String>,
+    val containsConsumableFoodItem: Boolean = true,
+    val rejectionReason: String = "",
+)
+
+data class IngredientListAnalysis(
+    val correctedIngredients: List<String>,
+    val ultraProcessedIngredients: List<IngredientRiskMarker>,
+    val warnings: List<String>,
+    val confidence: Float,
 )
 
 data class IngredientRiskMarker(

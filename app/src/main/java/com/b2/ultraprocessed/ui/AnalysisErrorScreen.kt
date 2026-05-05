@@ -82,12 +82,38 @@ fun AnalysisErrorScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = message,
-                color = Color.White.copy(alpha = 0.55f),
+                text = "This scan could not be analyzed.",
+                color = Color.White.copy(alpha = 0.78f),
                 fontSize = UiTextSizes.Body,
                 lineHeight = 20.sp,
                 textAlign = TextAlign.Center,
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Surface(
+                color = Color.White.copy(alpha = 0.045f),
+                shape = RoundedCornerShape(18.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    Color.White.copy(alpha = 0.09f),
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    UiSectionHeader(
+                        text = "AI response",
+                        accentColor = Emerald500,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = message,
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = UiTextSizes.BodySmall,
+                        lineHeight = 18.sp,
+                    )
+                }
+            }
 
             if (isRateLimitMessage(message)) {
                 Spacer(modifier = Modifier.height(18.dp))

@@ -8,10 +8,10 @@ import com.b2.ultraprocessed.network.usda.UsdaRepository
 import com.b2.ultraprocessed.network.usda.UsdaSearchFood
 import com.b2.ultraprocessed.network.llm.AllergenDetection
 import com.b2.ultraprocessed.network.llm.FoodLabelLlmWorkflow
-import com.b2.ultraprocessed.network.llm.IngredientClassification
-import com.b2.ultraprocessed.classify.IngredientAssessment
+import com.b2.ultraprocessed.network.llm.IngredientListAnalysis
 import com.b2.ultraprocessed.network.llm.IngredientExtraction
 import com.b2.ultraprocessed.network.llm.IngredientRiskMarker
+import com.b2.ultraprocessed.network.llm.NovaClassification
 import com.b2.ultraprocessed.ocr.OcrPipeline
 import com.b2.ultraprocessed.ocr.OcrResult
 import kotlinx.coroutines.test.runTest
@@ -22,9 +22,11 @@ import org.junit.Test
 
 class FoodAnalysisPipelineTest {
     @Test
-    fun analyzeFromImage_runsStagedLlmWorkflow_whenAvailable() = runTest {
+    fun analyzeFromImage_usesOnDeviceOcrThenTextOnlyApi() = runTest {
         val pipeline = buildPipeline(
-            ocrPipeline = OcrPipeline { OcrResult.Failure("OCR should not run") },
+            ocrPipeline = OcrPipeline {
+                OcrResult.Success("Ingredients: sugar, wheat flour, milk, artificial flavor")
+            },
             barcodeScanner = BarcodeScanner { BarcodeResult.Failure("unused") },
             usdaRepository = emptyUsdaRepository(),
             llmWorkflow = FakeFoodLabelLlmWorkflow(),
@@ -32,57 +34,45 @@ class FoodAnalysisPipelineTest {
 
         val result = pipeline.analyzeFromImage("/tmp/fake-image.jpg", "gemini-2.0-flash").getOrThrow()
 
-        assertEquals(AnalysisSourceType.Vlm, result.sourceType)
-        assertEquals("AI Read Snack", result.productName)
-        assertEquals("LLM image workflow", result.scanResult.sourceLabel)
+        assertEquals(AnalysisSourceType.Ocr, result.sourceType)
+        assertEquals("OCR", result.scanResult.sourceLabel)
         assertEquals(listOf("Milk", "Wheat"), result.scanResult.allergens)
-        assertEquals("Ingredients: sugar, wheat flour, milk, artificial flavor", result.scanResult.rawIngredientText)
+        assertEquals(
+            "Ingredients: sugar, wheat flour, milk, artificial flavor",
+            result.scanResult.rawIngredientText,
+        )
+        assertTrue(result.warnings.any { it.contains("on device", ignoreCase = true) })
     }
 
     @Test
-    fun analyzeFromImage_fallsBackToOcr_whenLlmExtractionFails() = runTest {
+    fun analyzeFromImage_requiresTextOnlyApiWorkflow_afterOcrSucceeds() = runTest {
         val pipeline = buildPipeline(
             ocrPipeline = OcrPipeline { OcrResult.Success("Ingredients: corn, salt, sunflower oil") },
             barcodeScanner = BarcodeScanner { BarcodeResult.Failure("unused") },
             usdaRepository = emptyUsdaRepository(),
-            llmWorkflow = FakeFoodLabelLlmWorkflow(extractionFailure = true),
-        )
-
-        val result = pipeline.analyzeFromImage("/tmp/fake-image.jpg", "gemini-2.0-flash").getOrThrow()
-
-        assertEquals(AnalysisSourceType.Ocr, result.sourceType)
-        assertEquals("OCR", result.scanResult.sourceLabel)
-        assertTrue(result.warnings.any { it.contains("LLM image workflow") })
-    }
-
-    @Test
-    fun analyzeFromImage_stopsWithInvalidImageError_whenExtractionRejectsImage() = runTest {
-        val pipeline = buildPipeline(
-            ocrPipeline = OcrPipeline { OcrResult.Success("Ingredients: should not run") },
-            barcodeScanner = BarcodeScanner { BarcodeResult.Failure("unused") },
-            usdaRepository = emptyUsdaRepository(),
-            llmWorkflow = FakeFoodLabelLlmWorkflow(invalidImage = true),
         )
 
         val result = pipeline.analyzeFromImage("/tmp/fake-image.jpg", "gemini-2.0-flash")
 
         assertTrue(result.isFailure)
-        assertEquals(FoodAnalysisPipeline.INVALID_IMAGE_ERROR, result.exceptionOrNull()?.message)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("API-only mode"))
     }
 
     @Test
-    fun analyzeFromImage_stopsWithInvalidImageError_whenExtractionHasNoUsableIngredients() = runTest {
+    fun analyzeFromImage_returnsFailure_whenClassificationTimesOut() = runTest {
         val pipeline = buildPipeline(
-            ocrPipeline = OcrPipeline { OcrResult.Success("Ingredients: should not run") },
+            ocrPipeline = OcrPipeline {
+                OcrResult.Success("Ingredients: corn syrup, natural flavor, salt")
+            },
             barcodeScanner = BarcodeScanner { BarcodeResult.Failure("unused") },
             usdaRepository = emptyUsdaRepository(),
-            llmWorkflow = FakeFoodLabelLlmWorkflow(emptyExtraction = true),
+            llmWorkflow = FakeFoodLabelLlmWorkflow(classificationFailure = Exception("API text classification timed out.")),
         )
 
         val result = pipeline.analyzeFromImage("/tmp/fake-image.jpg", "gemini-2.0-flash")
 
         assertTrue(result.isFailure)
-        assertEquals(FoodAnalysisPipeline.INVALID_IMAGE_ERROR, result.exceptionOrNull()?.message)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("timed out", ignoreCase = true))
     }
 
     @Test
@@ -220,81 +210,47 @@ private fun emptyUsdaRepository(): UsdaRepository =
     )
 
 private class FakeFoodLabelLlmWorkflow(
-    private val extractionFailure: Boolean = false,
-    private val invalidImage: Boolean = false,
-    private val emptyExtraction: Boolean = false,
+    private val classificationFailure: Exception? = null,
 ) : FoodLabelLlmWorkflow {
-    override suspend fun extractIngredients(
-        imagePath: String,
+    override suspend fun classifyNova(
+        extraction: IngredientExtraction,
         modelId: String,
         onStatus: (String) -> Unit,
-    ): Result<IngredientExtraction> {
-        if (extractionFailure) return Result.failure(Exception("No key"))
-        if (invalidImage) {
-            return Result.success(
-                IngredientExtraction(
-                    code = FoodAnalysisPipeline.INVALID_IMAGE_CODE,
-                    productName = "Invalid image",
-                    rawText = "",
-                    ingredients = emptyList(),
-                    confidence = 0f,
-                    warnings = listOf(FoodAnalysisPipeline.INVALID_IMAGE_ERROR),
-                ),
-            )
-        }
-        if (emptyExtraction) {
-            return Result.success(
-                IngredientExtraction(
-                    code = 0,
-                    productName = "Empty Label",
-                    rawText = "",
-                    ingredients = emptyList(),
-                    confidence = 0.6f,
-                    warnings = emptyList(),
-                ),
-            )
-        }
+    ): Result<NovaClassification> {
+        classificationFailure?.let { return Result.failure(it) }
         return Result.success(
-            IngredientExtraction(
-                code = 0,
-                productName = "AI Read Snack",
-                rawText = "Ingredients: sugar, wheat flour, milk, artificial flavor",
-                ingredients = listOf("Sugar", "Wheat Flour", "Milk", "Artificial Flavor"),
-                confidence = 0.9f,
+            NovaClassification(
+                novaGroup = 4,
+                summary = "The staged classifier found ultra-processed ingredient markers.",
+                confidence = 0.82f,
                 warnings = emptyList(),
             ),
         )
     }
 
-    override suspend fun classifyIngredients(
+    override suspend fun analyzeIngredientList(
         extraction: IngredientExtraction,
         modelId: String,
         onStatus: (String) -> Unit,
-    ): Result<IngredientClassification> =
+    ): Result<IngredientListAnalysis> =
         Result.success(
-            IngredientClassification(
-                novaGroup = 4,
-                summary = "The staged classifier found ultra-processed ingredient markers.",
-                confidence = 0.82f,
-                problemIngredients = listOf(
-                    IngredientRiskMarker(
-                        name = "Artificial Flavor",
-                        reason = "Flavor systems are a NOVA 4 processing marker.",
-                    ),
-                ),
+            IngredientListAnalysis(
+                correctedIngredients = extraction.ingredients.map { it.replaceFirstChar { c -> c.titlecaseChar() } },
+                ultraProcessedIngredients = extraction.ingredients
+                    .filter { it.contains("flavor", ignoreCase = true) }
+                    .map {
+                        IngredientRiskMarker(
+                            name = it.replaceFirstChar { c -> c.titlecaseChar() },
+                            reason = "Flavor systems are a NOVA 4 processing marker.",
+                        )
+                    },
                 warnings = emptyList(),
-                ingredientAssessments = extraction.ingredients.map {
-                    IngredientAssessment(
-                        name = it,
-                        novaGroup = 4,
-                        reason = "Test fixture NOVA 4 ingredient.",
-                    )
-                },
+                confidence = 0.82f,
             ),
         )
 
     override suspend fun detectAllergens(
-        extraction: IngredientExtraction,
+        correctedIngredientNames: List<String>,
         modelId: String,
         onStatus: (String) -> Unit,
     ): Result<AllergenDetection> =

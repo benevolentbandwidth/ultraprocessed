@@ -1,13 +1,8 @@
 package com.b2.ultraprocessed.network.llm
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
+import com.b2.ultraprocessed.analysis.AnalysisDebugLogger
 import com.b2.ultraprocessed.analysis.AnalysisTelemetry
-import com.b2.ultraprocessed.classify.IngredientAssessment
-import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -35,89 +30,56 @@ class GeminiFoodLabelLlmWorkflow(
 ) : FoodLabelLlmWorkflow {
     private val appContext = context.applicationContext
 
-    override suspend fun extractIngredients(
-        imagePath: String,
-        modelId: String,
-        onStatus: (String) -> Unit,
-    ): Result<IngredientExtraction> = withContext(Dispatchers.IO) {
-        try {
-            requireSupportedModel(modelId)
-            val apiKey = requireApiKey()
-
-            val prompt = readPrompt(INGREDIENT_EXTRACTION_PROMPT)
-            val encodedImage = encodeImageForModel(imagePath)
-            val extractionCandidate = retryContractParse(
-                operationLabel = "ingredient extraction",
-                onStatus = onStatus,
-                buildPrompt = { attempt, previousError ->
-                    prompt + buildContractRepairSuffix("ingredient extraction", attempt, previousError)
-                },
-                request = { repairedPrompt ->
-                    executeJsonRequest(
-                        requestBody = buildVisionRequestBody(repairedPrompt, encodedImage),
-                        modelId = modelId,
-                        apiKey = apiKey,
-                        operation = "extract_ingredients",
-                    )
-                },
-                parse = { json -> json },
-            )
-            val extraction = validateModelOutput(
-                operationLabel = "ingredient extraction",
-                candidate = extractionCandidate,
-                modelId = modelId,
-                apiKey = apiKey,
-                onStatus = onStatus,
-                parse = ::parseIngredientExtraction,
-            )
-            Result.success(extraction)
-        } catch (t: Throwable) {
-            Result.failure(t)
-        }
-    }
-
-    override suspend fun classifyIngredients(
+    override suspend fun classifyNova(
         extraction: IngredientExtraction,
         modelId: String,
         onStatus: (String) -> Unit,
-    ): Result<IngredientClassification> = withContext(Dispatchers.IO) {
+    ): Result<NovaClassification> = withContext(Dispatchers.IO) {
         try {
             requireSupportedModel(modelId)
             val apiKey = requireApiKey()
 
             val prompt = readPrompt(CLASSIFICATION_PROMPT)
-            val classificationCandidate = retryContractParse(
-                operationLabel = "classification",
-                onStatus = onStatus,
-                buildPrompt = { attempt, previousError ->
-                    prompt + buildContractRepairSuffix("classification", attempt, previousError)
-                },
-                request = { repairedPrompt ->
-                    executeJsonRequest(
-                        requestBody = buildTextRequestBody(repairedPrompt, extraction.toPromptJson()),
-                        modelId = modelId,
-                        apiKey = apiKey,
-                        operation = "classify_ingredients",
-                    )
-                },
-                parse = { json -> json },
-            )
-            val classification = validateModelOutput(
-                operationLabel = "classification",
-                candidate = classificationCandidate,
+            AnalysisDebugLogger.log("gemini_nova_request", extraction.toPromptJson().toString(2))
+            val candidate = executeJsonRequest(
+                requestBody = buildTextRequestBody(prompt, extraction.toPromptJson()),
                 modelId = modelId,
                 apiKey = apiKey,
-                onStatus = onStatus,
-                parse = ::parseIngredientClassification,
+                operation = "classify_nova",
             )
+            AnalysisDebugLogger.log("gemini_nova_candidate", candidate.toString(2))
+            val classification = LlmClassificationParser.parseNova(candidate)
             Result.success(classification)
         } catch (t: Throwable) {
             Result.failure(t)
         }
     }
 
-    override suspend fun detectAllergens(
+    override suspend fun analyzeIngredientList(
         extraction: IngredientExtraction,
+        modelId: String,
+        onStatus: (String) -> Unit,
+    ): Result<IngredientListAnalysis> = withContext(Dispatchers.IO) {
+        try {
+            requireSupportedModel(modelId)
+            val apiKey = requireApiKey()
+            val prompt = readPrompt(INGREDIENT_ANALYSIS_PROMPT)
+            AnalysisDebugLogger.log("gemini_ingredient_list_request", extraction.toPromptJson().toString(2))
+            val candidate = executeJsonRequest(
+                requestBody = buildTextRequestBody(prompt, extraction.toPromptJson()),
+                modelId = modelId,
+                apiKey = apiKey,
+                operation = "analyze_ingredient_list",
+            )
+            AnalysisDebugLogger.log("gemini_ingredient_list_candidate", candidate.toString(2))
+            Result.success(LlmClassificationParser.parseIngredientList(candidate))
+        } catch (t: Throwable) {
+            Result.failure(t)
+        }
+    }
+
+    override suspend fun detectAllergens(
+        correctedIngredientNames: List<String>,
         modelId: String,
         onStatus: (String) -> Unit,
     ): Result<AllergenDetection> = withContext(Dispatchers.IO) {
@@ -126,30 +88,16 @@ class GeminiFoodLabelLlmWorkflow(
             val apiKey = requireApiKey()
 
             val prompt = readPrompt(ALLERGEN_PROMPT)
-            val allergensCandidate = retryContractParse(
-                operationLabel = "allergen detection",
-                onStatus = onStatus,
-                buildPrompt = { attempt, previousError ->
-                    prompt + buildContractRepairSuffix("allergen detection", attempt, previousError)
-                },
-                request = { repairedPrompt ->
-                    executeJsonRequest(
-                        requestBody = buildTextRequestBody(repairedPrompt, extraction.toPromptJson()),
-                        modelId = modelId,
-                        apiKey = apiKey,
-                        operation = "detect_allergens",
-                    )
-                },
-                parse = { json -> json },
-            )
-            val allergens = validateModelOutput(
-                operationLabel = "allergen detection",
-                candidate = allergensCandidate,
+            val input = JSONObject().put("correctedIngredients", JSONArray(correctedIngredientNames))
+            AnalysisDebugLogger.log("gemini_allergen_request", input.toString(2))
+            val allergensCandidate = executeJsonRequest(
+                requestBody = buildTextRequestBody(prompt, input),
                 modelId = modelId,
                 apiKey = apiKey,
-                onStatus = onStatus,
-                parse = ::parseAllergenDetection,
+                operation = "detect_allergens",
             )
+            AnalysisDebugLogger.log("gemini_allergen_candidate", allergensCandidate.toString(2))
+            val allergens = parseAllergenDetection(allergensCandidate)
             Result.success(allergens)
         } catch (t: Throwable) {
             Result.failure(t)
@@ -165,28 +113,13 @@ class GeminiFoodLabelLlmWorkflow(
     private fun requireApiKey(): String {
         val apiKey = apiKeyProvider.getApiKey()
         require(apiKey.isNotBlank()) {
-            "Add an LLM API key in Settings to use image AI analysis."
+            "Add an LLM API key in Settings to analyze OCR text."
         }
         return apiKey
     }
 
     private fun readPrompt(assetPath: String): String =
         appContext.assets.open(assetPath).bufferedReader().use { it.readText() }
-
-    private fun buildVisionRequestBody(
-        prompt: String,
-        encodedImage: String,
-    ): RequestBody {
-        val imagePart = JSONObject()
-            .put(
-                "inline_data",
-                JSONObject()
-                    .put("mime_type", "image/jpeg")
-                    .put("data", encodedImage),
-            )
-        val textPart = JSONObject().put("text", prompt)
-        return buildGenerateContentRequest(JSONArray().put(textPart).put(imagePart))
-    }
 
     private fun buildTextRequestBody(
         prompt: String,
@@ -205,8 +138,8 @@ class GeminiFoodLabelLlmWorkflow(
             .put(
                 "generationConfig",
                 JSONObject()
-                    .put("temperature", 0.1)
-                    .put("topP", 0.9)
+                    .put("temperature", 0.0)
+                    .put("topP", 1.0)
                     .put("maxOutputTokens", 1800)
                     .put("responseMimeType", "application/json"),
             )
@@ -243,7 +176,7 @@ class GeminiFoodLabelLlmWorkflow(
                         response.use {
                             AnalysisTelemetry.event("gemini_response op=$operation http=${it.code}")
                             runCatching {
-                                parseGenerateContentResponse(it)
+                                parseGenerateContentResponse(it, operation)
                             }.onSuccess { json ->
                                 if (!continuation.isCancelled) {
                                     continuation.resume(json)
@@ -260,8 +193,9 @@ class GeminiFoodLabelLlmWorkflow(
         }
     }
 
-    private fun parseGenerateContentResponse(response: Response): JSONObject {
+    private fun parseGenerateContentResponse(response: Response, operation: String): JSONObject {
         val body = response.body?.string().orEmpty()
+        AnalysisDebugLogger.log("gemini_http_body", "operation=$operation body=${body.take(8_000)}")
         if (!response.isSuccessful) {
             val trimmed = body.replace('\n', ' ').take(220)
             throw IOException(buildHttpFailureMessage(response.code, trimmed))
@@ -278,27 +212,11 @@ class GeminiFoodLabelLlmWorkflow(
             ?.optJSONObject("content")
         val parts = content?.optJSONArray("parts")
         val text = parts?.optJSONObject(0)?.optString("text").orEmpty()
+        AnalysisDebugLogger.log("gemini_model_text", "operation=$operation text=${text.take(8_000)}")
         if (text.isBlank()) {
             throw IOException("LLM food-label workflow returned no text.")
         }
-        return parseResponseJson(text)
-    }
-
-    private fun encodeImageForModel(imagePath: String): String {
-        val file = File(imagePath)
-        require(file.isFile && file.canRead()) {
-            "Image file not found or unreadable."
-        }
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        val sampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight)
-        val bitmapOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath, bitmapOptions)
-            ?: throw IOException("Could not decode image for LLM analysis.")
-        return ByteArrayOutputStream().use { output ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
-            Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
-        }
+        return parseResponseJson(text, operation)
     }
 
     private fun buildHttpFailureMessage(statusCode: Int, apiBody: String): String {
@@ -314,102 +232,23 @@ class GeminiFoodLabelLlmWorkflow(
         }
     }
 
-    private fun calculateSampleSize(width: Int, height: Int): Int {
-        var sampleSize = 1
-        var currentWidth = width
-        var currentHeight = height
-        while (currentWidth / 2 >= MAX_IMAGE_DIMENSION || currentHeight / 2 >= MAX_IMAGE_DIMENSION) {
-            sampleSize *= 2
-            currentWidth /= 2
-            currentHeight /= 2
-        }
-        return sampleSize.coerceAtLeast(1)
-    }
-
-    private fun parseResponseJson(text: String): JSONObject {
+    private fun parseResponseJson(text: String, operation: String): JSONObject {
         val trimmed = text.trim()
         return try {
             JSONObject(trimmed)
         } catch (e: JSONException) {
+            val start = trimmed.indexOf('{')
+            val end = trimmed.lastIndexOf('}')
+            if (start >= 0 && end > start) {
+                return try {
+                    JSONObject(trimmed.substring(start, end + 1))
+                } catch (_: JSONException) {
+                    throw IOException("LLM food-label workflow returned invalid JSON.", e)
+                }
+            }
             throw IOException("LLM food-label workflow returned invalid JSON.", e)
         }
     }
-
-    private suspend fun <T> validateModelOutput(
-        operationLabel: String,
-        candidate: JSONObject,
-        modelId: String,
-        apiKey: String,
-        onStatus: (String) -> Unit,
-        parse: (JSONObject) -> T,
-    ): T {
-        val prompt = readPrompt(VALIDATION_PROMPT)
-        onStatus("Validating $operationLabel output")
-        return retryContractParse(
-            operationLabel = "$operationLabel validation",
-            onStatus = onStatus,
-            buildPrompt = { attempt, previousError ->
-                prompt + buildContractRepairSuffix("$operationLabel validation", attempt, previousError)
-            },
-            request = { repairedPrompt ->
-                executeJsonRequest(
-                    requestBody = buildTextRequestBody(
-                        repairedPrompt,
-                        buildValidationInput(operationLabel, candidate),
-                    ),
-                    modelId = modelId,
-                    apiKey = apiKey,
-                    operation = "${operationLabel.replace(' ', '_')}_validation",
-                )
-            },
-            parse = parse,
-        )
-    }
-
-    private fun parseIngredientExtraction(json: JSONObject): IngredientExtraction {
-        val code = json.requiredInt("code")
-        if (code != VALID_EXTRACTION_CODE && code != INVALID_EXTRACTION_CODE) {
-            throw IOException("LLM ingredient extraction returned unsupported code $code.")
-        }
-        val warnings = json.requiredArray("warnings").toStringList()
-        if (code == INVALID_EXTRACTION_CODE) {
-            return IngredientExtraction(
-                code = code,
-                productName = json.requiredString("productName").ifBlank { "Invalid image" },
-                rawText = "",
-                ingredients = emptyList(),
-                confidence = 0f,
-                warnings = warnings.ifEmpty {
-                    listOf("Invalid image. Please scan a food ingredient box or ingredient list.")
-                },
-            )
-        }
-        val rawText = json.requiredString("rawIngredientText")
-        val ingredients = json.requiredArray("ingredients").toStringList()
-        if (rawText.isBlank() || ingredients.isEmpty()) {
-            throw IOException("LLM ingredient extraction returned no usable ingredient list.")
-        }
-        return IngredientExtraction(
-            code = code,
-            productName = json.requiredString("productName").ifBlank { "Scanned food label" },
-            rawText = rawText,
-            ingredients = ingredients,
-            confidence = json.requiredConfidence("confidence"),
-            warnings = warnings,
-        )
-    }
-
-    private fun parseIngredientClassification(json: JSONObject): IngredientClassification =
-        IngredientClassification(
-            novaGroup = json.requiredInt("novaGroup").also {
-                if (it !in 1..4) throw IOException("LLM classification returned invalid NOVA group $it.")
-            },
-            summary = json.requiredString("summary"),
-            confidence = json.requiredConfidence("confidence"),
-            problemIngredients = json.requiredArray("problemIngredients").toRiskMarkers(),
-            warnings = json.requiredArray("warnings").toStringList(),
-            ingredientAssessments = json.optJSONArray("ingredientAssessments").toIngredientAssessments(),
-        )
 
     private fun parseAllergenDetection(json: JSONObject): AllergenDetection =
         AllergenDetection(
@@ -420,14 +259,9 @@ class GeminiFoodLabelLlmWorkflow(
 
     companion object {
         private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-        private const val INGREDIENT_EXTRACTION_PROMPT = "prompts/food_label_ingredient_extraction_prompt.md"
         private const val CLASSIFICATION_PROMPT = "prompts/food_label_classification_prompt.md"
+        private const val INGREDIENT_ANALYSIS_PROMPT = "prompts/food_label_ingredient_analysis_prompt.md"
         private const val ALLERGEN_PROMPT = "prompts/food_label_allergen_prompt.md"
-        private const val VALIDATION_PROMPT = "prompts/food_label_response_validation_prompt.md"
-        private const val MAX_IMAGE_DIMENSION = 1600
-        private const val JPEG_QUALITY = 86
-        private const val VALID_EXTRACTION_CODE = 0
-        private const val INVALID_EXTRACTION_CODE = -1
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
@@ -451,63 +285,6 @@ private fun IngredientExtraction.toPromptJson(): JSONObject =
         .put("ingredients", JSONArray(ingredients))
         .put("extractionConfidence", confidence)
         .put("extractionWarnings", JSONArray(warnings))
-
-private fun buildValidationInput(operationLabel: String, candidate: JSONObject): JSONObject =
-    JSONObject()
-        .put("operation", operationLabel)
-        .put("candidate", candidate)
-
-private fun JSONArray?.toStringList(): List<String> {
-    if (this == null) return emptyList()
-    return buildList {
-        for (index in 0 until length()) {
-            val value = optString(index).trim()
-            if (value.isNotBlank()) add(value)
-        }
-    }
-}
-
-private fun JSONArray?.toRiskMarkers(): List<IngredientRiskMarker> {
-    if (this == null) return emptyList()
-    return buildList {
-        for (index in 0 until length()) {
-            val item = optJSONObject(index)
-                ?: throw IOException("LLM response field 'problemIngredients[$index]' must be an object.")
-            val name = item.requiredString("name")
-            val reason = item.requiredString("reason")
-            if (name.isBlank() || reason.isBlank()) {
-                throw IOException("LLM response field 'problemIngredients[$index]' is incomplete.")
-            }
-            add(IngredientRiskMarker(name = name, reason = reason))
-        }
-    }
-}
-
-private fun JSONArray?.toIngredientAssessments(): List<IngredientAssessment> {
-    if (this == null) return emptyList()
-    return buildList {
-        for (index in 0 until length()) {
-            val item = optJSONObject(index)
-                ?: throw IOException("LLM response field 'ingredientAssessments[$index]' must be an object.")
-            val name = item.requiredString("name")
-            val novaGroup = item.requiredInt("novaGroup")
-            val reason = item.requiredString("reason")
-            if (name.isBlank() || reason.isBlank()) {
-                throw IOException("LLM response field 'ingredientAssessments[$index]' is incomplete.")
-            }
-            if (novaGroup !in 1..4) {
-                throw IOException("LLM response field 'ingredientAssessments[$index].novaGroup' is invalid.")
-            }
-            add(
-                IngredientAssessment(
-                    name = name,
-                    novaGroup = novaGroup,
-                    reason = reason,
-                ),
-            )
-        }
-    }
-}
 
 private fun JSONObject.requiredString(name: String): String {
     if (!has(name)) throw IOException("LLM response missing required field '$name'.")

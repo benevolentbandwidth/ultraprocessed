@@ -24,7 +24,7 @@ The storage contract is intentionally split by sensitivity:
 
 API keys are stored with Android Keystore-backed encrypted preferences:
 
-- `LLM_API_KEY` for the staged image analysis workflow.
+- `LLM_API_KEY` for text-only NOVA classification, ingredient cleanup, allergen detection, and result chat.
 - `USDA_API_KEY` for FoodData Central barcode lookup.
 
 Rules:
@@ -65,6 +65,7 @@ Stored fields include:
 - Barcode-only flag
 - Timestamp
 - Usage estimate fields for tokens and cost
+- Failure flag and failure message for scans that reached analysis but did not produce a valid result
 
 ```mermaid
 erDiagram
@@ -89,13 +90,22 @@ erDiagram
         double estimatedCostUsd
         string capturedImagePath
         boolean isBarcodeLookupOnly
+        boolean isFailed
+        string failureMessage
         long scannedAt
     }
 ```
 
 ## Migration Policy
 
-The database is versioned and exports schemas under `app/schemas`. Version 2 adds product and UI history fields to the original scan result table. Version 3 adds allergen storage. Migrations preserve existing rows with safe defaults and are covered by an instrumentation migration test.
+The database is versioned and exports schemas under `app/schemas`. The current Room version is 5.
+
+- Version 2 adds product and UI history fields.
+- Version 3 adds allergen storage.
+- Version 4 adds model/provider usage estimate fields.
+- Version 5 adds failed-scan history support with `isFailed` and `failureMessage`.
+
+Migrations preserve existing rows with safe defaults and are covered by instrumentation migration coverage.
 
 ## Data Boundaries
 
@@ -116,9 +126,11 @@ Network:
 
 - USDA barcode lookup sends barcode/product query and uses a user-provided USDA key.
 - USDA requests do not use disk HTTP cache because the API key is part of the provider request URL.
-- Staged LLM image analysis sends the captured label image for ingredient extraction when the user has saved an LLM key.
-- LLM classification and allergen detection send extracted ingredient JSON, not the image.
-- Invalid images are rejected at extraction with `code = -1`; later LLM stages and local fallback are not invoked for that user input.
+- Captured and uploaded label images are never sent to LLM providers.
+- ML Kit OCR extracts text on device.
+- LLM NOVA classification, ingredient cleanup, and allergen detection send extracted text/corrected ingredient JSON only, not the image.
+- OCR failures stop the flow before LLM classification or allergen detection.
+- Failed scans can still be persisted when a local image path exists, so History can show the failure and allow a rerun from that image.
 - If no LLM key is saved, the app cannot perform analysis. All classification is dependent on the LLM provider.
 
 ## Secret Lifecycle
@@ -137,7 +149,7 @@ The settings screen only shows metadata inferred from the saved LLM key:
 
 - provider
 - default model name
-- whether the provider accepts images
+- whether the provider is used text-only in Zest
 
 It does not display the key itself. USDA access is also stored through `SecretKeyManager` and treated as sensitive.
 
