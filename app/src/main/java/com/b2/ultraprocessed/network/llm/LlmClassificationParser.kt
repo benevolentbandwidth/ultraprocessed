@@ -6,6 +6,24 @@ import org.json.JSONObject
 
 internal object LlmClassificationParser {
     fun parseNova(json: JSONObject): NovaClassification {
+        val containsConsumableFoodItem = if (json.has("containsConsumableFoodItem")) {
+            json.optBoolean("containsConsumableFoodItem", true)
+        } else {
+            true
+        }
+        if (!containsConsumableFoodItem) {
+            val rejectionReason = json.optString("rejectionReason").trim()
+                .ifBlank { json.optString("summary").trim() }
+                .ifBlank { "Text doesn't contain any consumable food item." }
+            return NovaClassification(
+                novaGroup = 0,
+                summary = rejectionReason,
+                confidence = json.optDouble("confidence", 0.0).toFloat().coerceIn(0f, 1f),
+                warnings = json.optJSONArray("warnings").toStringList(),
+                containsConsumableFoodItem = false,
+                rejectionReason = rejectionReason,
+            )
+        }
         val novaGroup = json.optInt("novaGroup", -1)
         if (novaGroup !in 1..4) {
             throw IOException("LLM NOVA response missing valid required field 'novaGroup'.")
@@ -19,6 +37,8 @@ internal object LlmClassificationParser {
             summary = summary,
             confidence = json.optDouble("confidence", 0.0).toFloat().coerceIn(0f, 1f),
             warnings = json.optJSONArray("warnings").toStringList(),
+            containsConsumableFoodItem = true,
+            rejectionReason = json.optString("rejectionReason").trim(),
         )
     }
 

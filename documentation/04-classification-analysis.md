@@ -1,6 +1,6 @@
 # Classification And Analysis
 
-This layer turns on-device OCR or USDA ingredient evidence into the final result model shown by the UI. It is staged, contract-driven, and API-only for classification and allergen detection. Images never enter the API workflow.
+This layer turns on-device OCR or USDA ingredient evidence into the final result model shown by the UI. It is staged, contract-driven, and API-only for NOVA classification, ingredient cleanup, ultra-processed marker detection, and allergen detection. Images never enter the API workflow.
 
 ## Files
 
@@ -14,8 +14,8 @@ This layer turns on-device OCR or USDA ingredient evidence into the final result
 - `network/llm/LlmContractRetry.kt`
 - `network/llm/ResultChatWorkflow.kt`
 - `assets/prompts/food_label_classification_prompt.md`
+- `assets/prompts/food_label_ingredient_analysis_prompt.md`
 - `assets/prompts/food_label_allergen_prompt.md`
-- `assets/prompts/food_label_response_validation_prompt.md`
 - `assets/prompts/food_label_result_chat_prompt.md`
 - `ui/ClassificationUiMapper.kt`
 
@@ -26,9 +26,12 @@ flowchart TB
     Input[Image or barcode text] --> Extract[On-device OCR or USDA text extraction]
     Extract --> Gate{Enough ingredient text?}
     Gate -->|No| Invalid[OCR/text failure]
-    Gate -->|Yes| Classify[NOVA classification]
-    Gate -->|Yes| Allergen[Allergen detection]
-    Classify --> Result[AnalysisReport]
+    Gate -->|Yes| Nova[NOVA classification + non-food gate]
+    Nova -->|containsConsumableFoodItem false| Error[AnalysisErrorScreen AI response]
+    Nova -->|containsConsumableFoodItem true| Ingredients[Corrected ingredient list + UP markers]
+    Ingredients --> Allergen[Allergen detection from corrected names]
+    Nova --> Result[AnalysisReport]
+    Ingredients --> Result
     Allergen --> Result
     Result --> Usage[Usage estimate]
     Usage --> Ui
@@ -44,20 +47,35 @@ flowchart TB
 - Purpose: produce text evidence without sending images to the API.
 - Failure: missing or too-short text stops the pipeline before classification.
 
-### Classification
+### NOVA Classification
 
 - Input: `IngredientExtraction`.
-- Output: `IngredientClassification`.
-- Purpose: classify the whole label and each atomic ingredient by NOVA group.
+- Output: `NovaClassification`.
+- Purpose: classify the whole label by NOVA group and reject non-food/non-ingredient scans.
 - No image access.
 - No brand or marketing inference.
 - No allergen logic.
 
-### Allergen Detection
+If `containsConsumableFoodItem` is false, the pipeline stops immediately and shows `rejectionReason` on the error screen.
+
+### Ingredient List Analysis
 
 - Input: `IngredientExtraction`.
+- Output: `IngredientListAnalysis`.
+- Purpose: correct ingredient names and return the subset of corrected names that are ultra-processed or industrial formulation markers.
+- No overall NOVA classification.
+- No allergen logic.
+
+This stage directly controls ingredient capsule coloration:
+
+- corrected ingredient in `ultraProcessedIngredients` -> red capsule,
+- corrected ingredient not in `ultraProcessedIngredients` -> green capsule.
+
+### Allergen Detection
+
+- Input: corrected ingredient names from `IngredientListAnalysis`.
 - Output: `AllergenDetection`.
-- Purpose: identify allergen signals from the same extracted ingredient evidence.
+- Purpose: identify common US / Western allergen signals from cleaned ingredient names.
 - Separate UI surface from ingredient NOVA bubbles.
 
 ## JSON Outputs
@@ -79,17 +97,37 @@ flowchart TB
 
 ```json
 {
+  "containsConsumableFoodItem": true,
   "novaGroup": 4,
   "summary": "The list contains industrial formulation markers.",
+  "rejectionReason": "",
   "confidence": 0.84,
-  "ingredientAssessments": [
-    { "name": "Sugar", "novaGroup": 3, "reason": "Simple ingredient." },
-    { "name": "Wheat Flour", "novaGroup": 3, "reason": "Processed flour component." },
-    { "name": "Artificial Flavor", "novaGroup": 4, "reason": "Strong NOVA 4 marker." }
-  ],
-  "problemIngredients": [
+  "warnings": []
+}
+```
+
+### Non-Food Classification Response
+
+```json
+{
+  "containsConsumableFoodItem": false,
+  "novaGroup": 0,
+  "summary": "Text doesn't contain any consumable food item.",
+  "rejectionReason": "Text doesn't contain any consumable food item.",
+  "confidence": 0.0,
+  "warnings": ["No food ingredient evidence was found in the supplied text."]
+}
+```
+
+### Ingredient List Analysis
+
+```json
+{
+  "correctedIngredients": ["Sugar", "Wheat Flour", "Artificial Flavor"],
+  "ultraProcessedIngredients": [
     { "name": "Artificial Flavor", "reason": "Industrial flavor marker." }
   ],
+  "confidence": 0.84,
   "warnings": []
 }
 ```
@@ -104,13 +142,15 @@ flowchart TB
 }
 ```
 
-## Ingredient Bubble Contract
+## Ingredient Capsule Contract
 
-- Each `ingredients` entry must be atomic and short.
+- Each `correctedIngredients` entry must be atomic and short.
 - Do not return comma blobs or sentence-like strings.
 - Keep ingredient order stable.
 - The UI renders each ingredient as a compact chip.
-- `ingredientAssessments[n].novaGroup` maps directly to bubble color.
+- Names returned in `ultraProcessedIngredients` render red.
+- Corrected names not returned in `ultraProcessedIngredients` render green.
+- NOVA 1/2/3/4 colors are only for the overall classification tile, not ingredient capsule coloring.
 
 ## Contract Enforcement
 
@@ -124,38 +164,38 @@ classDiagram
         +confidence: Float
         +warnings: List~String~
     }
-    class IngredientClassification {
+    class NovaClassification {
         +novaGroup: Int
         +summary: String
         +confidence: Float
-        +problemIngredients: List~IngredientRiskMarker~
         +warnings: List~String~
-        +ingredientAssessments: List~IngredientAssessment~
+        +containsConsumableFoodItem: Boolean
+        +rejectionReason: String
     }
-    class IngredientAssessment {
-        +name: String
-        +novaGroup: Int
-        +reason: String
+    class IngredientListAnalysis {
+        +correctedIngredients: List~String~
+        +ultraProcessedIngredients: List~IngredientRiskMarker~
+        +warnings: List~String~
+        +confidence: Float
     }
     class AllergenDetection {
         +allergens: List~String~
         +warnings: List~String~
         +confidence: Float
     }
-    IngredientClassification --> IngredientAssessment
+    IngredientListAnalysis --> IngredientRiskMarker
     FoodAnalysisPipeline --> IngredientExtraction
-    FoodAnalysisPipeline --> IngredientClassification
+    FoodAnalysisPipeline --> NovaClassification
+    FoodAnalysisPipeline --> IngredientListAnalysis
     FoodAnalysisPipeline --> AllergenDetection
 ```
 
 ## Retry Model
 
-- Each LLM call uses up to 3 contract attempts.
-- Retry prompts include the previous schema error.
-- Retry delays increase between attempts.
-- UI status text surfaces the retry timing instead of hiding it.
-- The workflow also includes a validation pass for the raw model response when the output needs normalization.
-- If retries are exhausted, the pipeline converts the error into a user-safe message rather than exposing raw schema names.
+- Timeout retries are handled by `FoodAnalysisPipeline.runLlmStage`.
+- `LLM_TIMEOUT_RETRY_ATTEMPTS` is currently 2.
+- Contract/schema retry is intentionally minimal; `LlmContractRetry.kt` currently allows one contract attempt.
+- If a stage returns malformed JSON, missing required fields, or an unsupported value, the pipeline fails that scan rather than inventing a rule-based fallback.
 
 For the full API request/response contract, see [08-llm-api-contracts.md](08-llm-api-contracts.md).
 
@@ -164,9 +204,9 @@ For the full API request/response contract, see [08-llm-api-contracts.md](08-llm
 `ClassificationUiMapper` converts analysis output into `ScanResultUi`:
 
 - `novaGroup` becomes the top-level classification card.
-- `ingredientAssessments` becomes the ingredient chip list.
+- `correctedIngredients` becomes the ingredient chip list.
+- `ultraProcessedIngredients` becomes `problemIngredients` and marks matching chips as red.
 - `allergens` becomes a separate allergen block.
-- `warnings` becomes the data warning block at the bottom.
 - `UsageEstimateCalculator` estimates input tokens, output tokens, total tokens, and cost for history summaries.
 
 ## Usage And Cost Metadata
@@ -186,5 +226,6 @@ flowchart LR
 
 - OCR text may be noisy; the prompt and parser treat it as evidence, not truth.
 - If OCR cannot read enough text, the entire flow stops before any LLM request.
-- If classification or allergen detection fails, the analysis fails for that scan.
+- If the first LLM stage says the text is not a consumable food item, later LLM stages are skipped and the user sees the returned reason.
+- If NOVA classification, ingredient cleanup, or allergen detection fails, the analysis fails for that scan.
 - There is no rule-based fallback classifier in the runtime path.

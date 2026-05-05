@@ -23,7 +23,7 @@ flowchart LR
     CameraX --> File[App-local image file]
     File --> Analysis[FoodAnalysisPipeline]
     Analysis --> OCR[ML Kit OCR on device]
-    OCR --> LLM[Text-only LLM classification and allergens]
+    OCR --> LLM[Text-only staged LLM workflow]
 ```
 
 ## Gallery Import Flow
@@ -34,7 +34,7 @@ flowchart LR
     Uri --> Copy[Copy stream into app-local imports folder]
     Copy --> Analysis[FoodAnalysisPipeline]
     Analysis --> OCR[ML Kit OCR on device]
-    OCR --> LLM[Text-only LLM classification and allergens]
+    OCR --> LLM[Text-only staged LLM workflow]
 ```
 
 ## Barcode Flow
@@ -71,4 +71,5 @@ flowchart LR
 
 - Missing image file returns a typed OCR/barcode failure.
 - Empty OCR text returns a user-friendly failure.
+- OCR text that is readable but not food-related is sent to the first LLM stage, which can return `containsConsumableFoodItem = false`. The app then stops and shows the model's human-readable rejection reason.
 - Barcode miss can fall back to on-device OCR when an image path is available.

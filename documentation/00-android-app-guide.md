@@ -81,6 +81,7 @@ The Compose splash is implemented in:
 ## Navigation Model
 
 Zest does not use a large navigation framework yet. The app shell stores a simple destination value and swaps screens with Compose.
+System back and Android edge-swipe gestures are intercepted with Compose `BackHandler` in `UltraProcessedApp.kt`. The handler routes back actions within the app instead of letting the Activity close immediately.
 
 ```mermaid
 stateDiagram-v2
@@ -93,12 +94,15 @@ stateDiagram-v2
     Analyzing --> AnalysisError: failure
     Results --> Scanner: scan again
     Results --> History
+    History --> Results: back if opened from Results
     Settings --> Scanner
     History --> Scanner
     AnalysisError --> Scanner
 ```
 
 The owner of this flow is `ui/UltraProcessedApp.kt`.
+
+Current limitation: this is still not a true navigation stack. `UltraProcessedApp` tracks one `destination` plus a lightweight `previousDestination` for Settings and History. See [09-todo-roadmap.md](09-todo-roadmap.md) for the centralized navigation stack v2 task.
 
 ## How Compose Screens Work Here
 
@@ -162,9 +166,12 @@ flowchart TD
     Capture --> File[Saved app-local image path]
     File --> Analyze[FoodAnalysisPipeline.analyzeFromImage]
     Analyze --> OCR[ML Kit OCR on device]
-    OCR --> Classify[LLM NOVA classification from text]
-    OCR --> Allergens[LLM allergen detection from text]
-    Classify --> Result[ScanResultUi]
+    OCR --> Nova[LLM NOVA classification + non-food gate]
+    Nova -->|containsConsumableFoodItem false| Error[AnalysisErrorScreen]
+    Nova -->|containsConsumableFoodItem true| Ingredients[LLM corrected ingredients + UP markers]
+    Ingredients --> Allergens[LLM allergen detection from corrected names]
+    Nova --> Result[ScanResultUi]
+    Ingredients --> Result
     Allergens --> Result
     Result --> Room[Persist to Room history]
     Result --> UI[ResultsScreen]
@@ -187,8 +194,10 @@ flowchart TD
     Live --> Code[UPC/EAN barcode value]
     Code --> USDA[USDA lookup if key exists]
     USDA --> Ingredients[Product ingredient text]
-    Ingredients --> Classify[LLM classification and allergens]
-    Classify --> History[Persist result]
+    Ingredients --> Nova[LLM NOVA classification + non-food gate]
+    Nova --> Cleanup[LLM corrected ingredients + UP marker list]
+    Cleanup --> Allergens[LLM allergens from corrected names]
+    Allergens --> History[Persist result]
 ```
 
 The primary scanner button changes from `Scan Label` to `Scan Barcode` when barcode mode is selected.
@@ -212,7 +221,8 @@ Important boundaries:
 - Captured images are local files.
 - Sound preferences are local app settings.
 - LLM providers never receive captured or uploaded images.
-- LLM providers receive extracted ingredient text only when the user has configured a key.
+- LLM providers receive extracted text JSON only when the user has configured a key.
+- The NOVA stage rejects non-food/non-ingredient scans with `containsConsumableFoodItem = false`; the app shows the returned human-readable reason instead of forcing later stages to fail.
 - USDA receives barcode/product lookup requests only when USDA access is configured.
 
 ## Build System
@@ -261,3 +271,4 @@ Use this checklist before handing a change to someone else:
 | Change analysis behavior | `analysis/FoodAnalysisPipeline.kt` |
 | Change LLM prompts | `app/src/main/assets/prompts/` |
 | Change local history schema | `storage/room/ScanResult.kt` and `app/schemas/` |
+| Plan v2 engineering/product work | `documentation/09-todo-roadmap.md` |

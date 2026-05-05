@@ -1,10 +1,10 @@
 # Architecture
 
-Zest is a native Android app for label analysis. It launches through a branded Android splash and Compose splash, captures a food label image or barcode, extracts image text on device with ML Kit OCR, sends only ingredient text through staged API workflows for NOVA classification and allergen detection, and stores the final result locally for history and review.
+Zest is a native Android app for label analysis. It launches through a branded Android splash and Compose splash, captures a food label image or barcode, extracts image text on device with ML Kit OCR, sends only extracted text through staged API workflows, and stores the final result locally for history and review.
 
 ## Design Goals
 
-- Keep classification and allergen logic API-driven.
+- Keep NOVA classification, ingredient cleanup, ultra-processed marker detection, and allergen logic API-driven.
 - Keep secret storage encrypted and out of source control.
 - Keep the UI deterministic and driven by explicit contracts.
 - Keep history local, deletable, and exportable by future work.
@@ -60,8 +60,11 @@ sequenceDiagram
     User->>Scanner: Capture or import image
     Scanner->>Pipeline: analyzeFromImage(path)
     Pipeline->>Pipeline: ML Kit OCR extracts text on device
-    Pipeline->>LLM: classifyIngredients(text extraction)
-    Pipeline->>LLM: detectAllergens(text extraction)
+    Pipeline->>LLM: classifyNova(text extraction)
+    LLM-->>Pipeline: NovaClassification or non-food marker
+    Pipeline->>LLM: analyzeIngredientList(text extraction)
+    LLM-->>Pipeline: corrected ingredients + ultra-processed marker list
+    Pipeline->>LLM: detectAllergens(corrected ingredients)
     Pipeline-->>Scanner: AnalysisReport
     Scanner->>Room: Persist scan result and usage estimate
 ```
@@ -80,8 +83,9 @@ sequenceDiagram
     Scanner->>Pipeline: analyzeFromBarcode(code)
     Pipeline->>USDA: lookupByBarcode(code)
     USDA-->>Pipeline: USDA product record
-    Pipeline->>LLM: classifyIngredients(from USDA text)
-    Pipeline->>LLM: detectAllergens(from USDA text)
+    Pipeline->>LLM: classifyNova(from USDA text)
+    Pipeline->>LLM: analyzeIngredientList(from USDA text)
+    Pipeline->>LLM: detectAllergens(corrected ingredients)
     Pipeline-->>Scanner: AnalysisReport
 ```
 
@@ -152,7 +156,8 @@ classDiagram
     }
     class FoodLabelLlmWorkflow {
         <<interface>>
-        +classifyIngredients()
+        +classifyNova()
+        +analyzeIngredientList()
         +detectAllergens()
     }
     class UsdaRepository {
@@ -184,6 +189,7 @@ classDiagram
 ## Failure Policy
 
 - OCR failures stop before any LLM request is made.
+- Non-food/non-ingredient text is rejected by the first LLM stage using `containsConsumableFoodItem = false`; the pipeline stops before ingredient cleanup or allergen detection.
 - API rate limit errors surface as 429-specific UI messages.
 - USDA lookup miss falls back to on-device OCR only when an image exists.
 - If the LLM workflow is unavailable, the analysis fails rather than inventing a result.

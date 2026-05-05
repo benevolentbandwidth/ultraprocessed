@@ -9,6 +9,10 @@ Your task has two parts:
 1. Produce a clean ingredient list for UI capsules.
 2. Identify only the individual cleaned ingredient names that should render red because they are ultra-processed or industrial formulation markers.
 
+Correct ingredient list names.
+Filter all non-ingredient content out.
+The `ultraProcessedIngredients` list directly controls capsule coloration.
+
 Do not make the overall NOVA classification.
 
 Do not detect allergens.
@@ -234,6 +238,7 @@ If such text is mixed into the ingredient list, remove it and add a warning if i
 Only include ingredients from `correctedIngredients` that are clear ultra-processed or industrial formulation markers.
 
 Each `ultraProcessedIngredients[*].name` must exactly match one item from `correctedIngredients`.
+Every ultra-processed ingredient name must exactly match one item from `correctedIngredients`.
 
 Do not include ingredient names that are not present in `correctedIngredients`.
 

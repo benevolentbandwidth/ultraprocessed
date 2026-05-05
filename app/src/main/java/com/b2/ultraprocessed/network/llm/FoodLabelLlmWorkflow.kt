@@ -45,6 +45,8 @@ data class NovaClassification(
     val summary: String,
     val confidence: Float,
     val warnings: List<String>,
+    val containsConsumableFoodItem: Boolean = true,
+    val rejectionReason: String = "",
 )
 
 data class IngredientListAnalysis(

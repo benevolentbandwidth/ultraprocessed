@@ -43,6 +43,27 @@ class LlmClassificationParserTest {
     }
 
     @Test
+    fun parseNova_acceptsNonConsumableFoodMarkerWithoutNovaGroup() {
+        val output = JSONObject(
+            """
+            {
+              "containsConsumableFoodItem": false,
+              "summary": "Text doesn't contain any consumable food item.",
+              "rejectionReason": "Text doesn't contain any consumable food item.",
+              "confidence": 0.91,
+              "warnings": ["No food ingredient evidence was found."]
+            }
+            """.trimIndent(),
+        )
+
+        val parsed = LlmClassificationParser.parseNova(output)
+
+        assertEquals(0, parsed.novaGroup)
+        assertEquals(false, parsed.containsConsumableFoodItem)
+        assertEquals("Text doesn't contain any consumable food item.", parsed.rejectionReason)
+    }
+
+    @Test
     fun parseIngredientList_readsCorrectedNamesAndUltraProcessedSubset() {
         val output = JSONObject(
             """

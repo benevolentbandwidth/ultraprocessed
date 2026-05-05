@@ -1,5 +1,6 @@
 package com.b2.ultraprocessed.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -91,6 +92,7 @@ fun UltraProcessedApp(
     var analysisErrorMessage by remember { mutableStateOf("") }
     var currentScanResult by remember { mutableStateOf<ScanResultUi?>(null) }
     var destination by rememberSaveable { mutableStateOf(AppDestination.Splash) }
+    var previousDestination by rememberSaveable { mutableStateOf<AppDestination?>(null) }
     val splashDurationMillis = if (soundEffectsEnabled) {
         soundManager.startupCueDurationMillis.takeIf { it > 0L } ?: timingConfig.splashDurationMillis
     } else {
@@ -107,6 +109,36 @@ fun UltraProcessedApp(
         if (soundEffectsEnabled) {
             soundManager.play(event)
         }
+    }
+
+    fun navigateTo(nextDestination: AppDestination, rememberCurrentForBack: Boolean = false) {
+        previousDestination = if (rememberCurrentForBack) destination else null
+        destination = nextDestination
+    }
+
+    fun navigateBackWithinApp() {
+        when (destination) {
+            AppDestination.Splash -> Unit
+            AppDestination.Scanner -> Unit
+            AppDestination.Analyzing -> navigateTo(AppDestination.Scanner)
+            AppDestination.Results -> navigateTo(AppDestination.Scanner)
+            AppDestination.AnalysisError -> {
+                analysisErrorMessage = ""
+                navigateTo(AppDestination.Scanner)
+            }
+            AppDestination.Settings,
+            AppDestination.History -> {
+                val target = previousDestination
+                    ?.takeUnless { it == AppDestination.Splash || it == AppDestination.Analyzing }
+                    ?: AppDestination.Scanner
+                previousDestination = null
+                destination = target
+            }
+        }
+    }
+
+    BackHandler(enabled = destination != AppDestination.Splash) {
+        navigateBackWithinApp()
     }
 
     LaunchedEffect(secretKeyManager) {
@@ -163,7 +195,7 @@ fun UltraProcessedApp(
                     AppDestination.Splash -> SplashScreen(
                         displayDurationMillis = splashDurationMillis,
                         onSoundEffect = { event -> playSound(event) },
-                        onComplete = { destination = AppDestination.Scanner },
+                        onComplete = { navigateTo(AppDestination.Scanner) },
                     )
 
                     AppDestination.Scanner -> ScannerScreen(
@@ -175,17 +207,21 @@ fun UltraProcessedApp(
                             barcodeValue = null
                             analysisMode = AnalysisMode.LabelImage
                             scanSessionId++
-                            destination = AppDestination.Analyzing
+                            navigateTo(AppDestination.Analyzing)
                         },
                         onBarcodeScanned = { code ->
                             lastCapturedPhotoPath = null
                             barcodeValue = code
                             analysisMode = AnalysisMode.BarcodeValue
                             scanSessionId++
-                            destination = AppDestination.Analyzing
+                            navigateTo(AppDestination.Analyzing)
                         },
-                        onSettings = { destination = AppDestination.Settings },
-                        onHistory = { destination = AppDestination.History },
+                        onSettings = {
+                            navigateTo(AppDestination.Settings, rememberCurrentForBack = true)
+                        },
+                        onHistory = {
+                            navigateTo(AppDestination.History, rememberCurrentForBack = true)
+                        },
                         onSoundEffect = { event -> playSound(event) },
                     )
 
@@ -208,12 +244,12 @@ fun UltraProcessedApp(
                                 }.onSuccess {
                                     playSound(AppSoundEvent.Success)
                                     currentScanResult = result
-                                    destination = AppDestination.Results
+                                    navigateTo(AppDestination.Results)
                                 }.onFailure {
                                     playSound(AppSoundEvent.Error)
                                     deleteLocalScanImage(appContext, result.labelImagePath)
                                     analysisErrorMessage = "Could not save scan history. Please try again."
-                                    destination = AppDestination.AnalysisError
+                                    navigateTo(AppDestination.AnalysisError)
                                 }
                             }
                         },
@@ -234,7 +270,7 @@ fun UltraProcessedApp(
                             }
                             analysisErrorMessage = message
                             barcodeValue = null
-                            destination = AppDestination.AnalysisError
+                            navigateTo(AppDestination.AnalysisError)
                         },
                     )
 
@@ -244,9 +280,11 @@ fun UltraProcessedApp(
                             ResultsScreen(
                                 result = result,
                                 onScanAgain = {
-                                    destination = AppDestination.Scanner
+                                    navigateTo(AppDestination.Scanner)
                                 },
-                                onOpenHistory = { destination = AppDestination.History },
+                                onOpenHistory = {
+                                    navigateTo(AppDestination.History, rememberCurrentForBack = true)
+                                },
                                 chatEnabled = hasLlmApiKey,
                                 onAskAboutResult = { question, onStatus ->
                                     val current = currentScanResult
@@ -281,7 +319,7 @@ fun UltraProcessedApp(
                             )
                         } else {
                             LaunchedEffect(Unit) {
-                                destination = AppDestination.Scanner
+                                navigateTo(AppDestination.Scanner)
                             }
                         }
                     }
@@ -292,7 +330,7 @@ fun UltraProcessedApp(
                         },
                         onRetry = {
                             analysisErrorMessage = ""
-                            destination = AppDestination.Scanner
+                            navigateTo(AppDestination.Scanner)
                         },
                     )
 
@@ -302,7 +340,7 @@ fun UltraProcessedApp(
                         modelOptions = AppCatalog.modelOptions,
                         llmKeyMetadata = llmKeyMetadata,
                         soundEffectsEnabled = soundEffectsEnabled,
-                        onBack = { destination = AppDestination.Scanner },
+                        onBack = { navigateBackWithinApp() },
                         onLlmApiKeySaved = { key ->
                             runCatching {
                                 val provider = LlmProviderResolver.detectProvider(key)
@@ -387,7 +425,7 @@ fun UltraProcessedApp(
                     AppDestination.History -> HistoryScreen(
                         historyItems = historyItems,
                         historySummary = historySummary,
-                        onBack = { destination = AppDestination.Scanner },
+                        onBack = { navigateBackWithinApp() },
                         onClearAll = {
                             coroutineScope.launch {
                                 historyItems.forEach { item ->
@@ -411,7 +449,7 @@ fun UltraProcessedApp(
                                 barcodeValue = null
                                 analysisMode = AnalysisMode.LabelImage
                                 scanSessionId++
-                                destination = AppDestination.Analyzing
+                                navigateTo(AppDestination.Analyzing)
                             }
                         },
                     )

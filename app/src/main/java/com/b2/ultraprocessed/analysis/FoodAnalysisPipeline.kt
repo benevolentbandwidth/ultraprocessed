@@ -216,8 +216,17 @@ class FoodAnalysisPipeline(
         }.also {
             AnalysisDebugLogger.log(
                 "nova_output",
-                "nova=${it.novaGroup} confidence=${it.confidence} summary=${it.summary} warnings=${it.warnings}",
+                "containsFood=${it.containsConsumableFoodItem} nova=${it.novaGroup} " +
+                    "confidence=${it.confidence} summary=${it.summary} " +
+                    "rejectionReason=${it.rejectionReason} warnings=${it.warnings}",
             )
+        }
+        if (!nova.containsConsumableFoodItem) {
+            val message = nova.rejectionReason.ifBlank {
+                nova.summary.ifBlank { "Text doesn't contain any consumable food item." }
+            }
+            AnalysisDebugLogger.log("classification_non_food_text", message)
+            return Result.failure(NonConsumableFoodTextException(message))
         }
 
         val ingredientList = runLlmStage(
@@ -422,6 +431,8 @@ private suspend fun <T> runLlmStage(
 }
 
 private const val LLM_TIMEOUT_RETRY_ATTEMPTS = 2
+
+private class NonConsumableFoodTextException(message: String) : Exception(message)
 
 private fun IngredientClassification.toClassificationResult(): ClassificationResult =
     ClassificationResult(
