@@ -17,7 +17,7 @@ import com.b2.ultraprocessed.network.llm.LlmUsage
 import com.b2.ultraprocessed.network.llm.MultiProviderFoodLabelLlmWorkflow
 import com.b2.ultraprocessed.network.llm.NovaClassification
 import com.b2.ultraprocessed.network.llm.OpenAiCompatibleFoodLabelLlmWorkflow
-import com.b2.ultraprocessed.network.llm.SecretLlmApiKeyProvider
+import com.b2.ultraprocessed.network.llm.DefaultOrSecretLlmApiKeyProvider
 import com.b2.ultraprocessed.network.usda.SecretUsdaApiKeyProvider
 import com.b2.ultraprocessed.network.usda.UsdaHttpClientFactory
 import com.b2.ultraprocessed.network.usda.UsdaApiService
@@ -316,13 +316,15 @@ class FoodAnalysisPipeline(
         fun create(context: Context): FoodAnalysisPipeline {
             val appContext = context.applicationContext
             AnalysisDebugLogger.initialize(appContext)
+            val secretKeyManager = SecretKeyManager(appContext)
+            val llmApiKeyProvider = DefaultOrSecretLlmApiKeyProvider(secretKeyManager)
             return FoodAnalysisPipeline(
                 ocrPipeline = MlKitOcrPipeline(appContext),
                 barcodeScanner = MlKitBarcodeScanner(appContext),
                 usdaRepository = UsdaRepository(
                     dataSource = UsdaApiService(
                         apiKeyProvider = SecretUsdaApiKeyProvider(
-                            SecretKeyManager(appContext),
+                            secretKeyManager,
                         ),
                         client = UsdaHttpClientFactory.create(),
                     ),
@@ -330,31 +332,23 @@ class FoodAnalysisPipeline(
                 llmWorkflow = MultiProviderFoodLabelLlmWorkflow(
                     geminiWorkflow = GeminiFoodLabelLlmWorkflow(
                         context = appContext,
-                        apiKeyProvider = SecretLlmApiKeyProvider(
-                            SecretKeyManager(appContext),
-                        ),
+                        apiKeyProvider = llmApiKeyProvider,
                     ),
                     openAiWorkflow = OpenAiCompatibleFoodLabelLlmWorkflow(
                         context = appContext,
-                        apiKeyProvider = SecretLlmApiKeyProvider(
-                            SecretKeyManager(appContext),
-                        ),
+                        apiKeyProvider = llmApiKeyProvider,
                         baseUrl = "https://api.openai.com/v1",
                         providerTag = "openai",
                     ),
                     grokWorkflow = OpenAiCompatibleFoodLabelLlmWorkflow(
                         context = appContext,
-                        apiKeyProvider = SecretLlmApiKeyProvider(
-                            SecretKeyManager(appContext),
-                        ),
+                        apiKeyProvider = llmApiKeyProvider,
                         baseUrl = "https://api.x.ai/v1",
                         providerTag = "grok",
                     ),
                     groqWorkflow = OpenAiCompatibleFoodLabelLlmWorkflow(
                         context = appContext,
-                        apiKeyProvider = SecretLlmApiKeyProvider(
-                            SecretKeyManager(appContext),
-                        ),
+                        apiKeyProvider = llmApiKeyProvider,
                         baseUrl = "https://api.groq.com/openai/v1",
                         providerTag = "groq",
                     ),

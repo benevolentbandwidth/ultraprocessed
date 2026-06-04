@@ -23,12 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.b2.ultraprocessed.BuildConfig
 import com.b2.ultraprocessed.storage.preferences.AppPreferences
+import com.b2.ultraprocessed.network.bootstrap.LlmBootstrapClient
+import com.b2.ultraprocessed.network.llm.DefaultOrSecretLlmApiKeyProvider
 import com.b2.ultraprocessed.network.llm.LlmApiKeyVerifier
 import com.b2.ultraprocessed.network.llm.LlmProviderResolver
 import com.b2.ultraprocessed.network.llm.ResultChatContext
 import com.b2.ultraprocessed.network.llm.ResultChatIngredientSignal
 import com.b2.ultraprocessed.network.llm.ResultChatWorkflowFactory
-import com.b2.ultraprocessed.network.llm.SecretLlmApiKeyProvider
+import com.b2.ultraprocessed.network.llm.hasAnyLlmApiKey
+import com.b2.ultraprocessed.network.llm.resolveActiveLlmApiKey
 import com.b2.ultraprocessed.storage.room.NovaDatabase
 import com.b2.ultraprocessed.storage.room.ScanResult as ScanResultEntity
 import com.b2.ultraprocessed.storage.secrets.SecretKeyManager
@@ -63,7 +66,7 @@ fun UltraProcessedApp(
     val resultChatWorkflow = remember(appContext) {
         ResultChatWorkflowFactory.create(
             context = appContext,
-            apiKeyProvider = SecretLlmApiKeyProvider(secretKeyManager),
+            apiKeyProvider = DefaultOrSecretLlmApiKeyProvider(secretKeyManager),
         )
     }
     val llmApiKeyVerifier = remember { LlmApiKeyVerifier() }
@@ -162,25 +165,19 @@ fun UltraProcessedApp(
                 secretKeyManager.saveApiKey(SecretKeyManager.USDA_API_KEY, bootstrapUsdaKey)
             }
         }
-        val savedLlmKey = runCatching {
-            secretKeyManager.getApiKey(SecretKeyManager.LLM_API_KEY)
-        }.getOrNull().orEmpty()
-        val provider = LlmProviderResolver.detectProvider(savedLlmKey)
-        hasLlmApiKey = savedLlmKey.isNotBlank()
-        llmKeyMetadata = provider?.let { provider ->
-            LlmProviderResolver.defaultModelForProvider(provider)?.let {
-                KeyMetadata(
-                    modelName = it.modelName,
-                    provider = it.provider,
-                    acceptsImages = it.acceptsImages,
-                )
-            }
-        }
-        provider?.let {
-            LlmProviderResolver.defaultModelForProvider(it)?.let { model ->
-                selectedModelId = model.modelId
-            }
-        }
+
+        bootstrapDefaultLlmKeyIfNeeded(
+            secretKeyManager = secretKeyManager,
+            bootstrapUrl = BuildConfig.LLM_BOOTSTRAP_URL,
+            authToken = BuildConfig.LLM_BOOTSTRAP_AUTH_TOKEN,
+            packageName = appContext.packageName,
+        )
+
+        val llmUiState = llmKeyUiStateFromSecrets(secretKeyManager)
+        hasLlmApiKey = llmUiState.hasKey
+        llmKeyMetadata = llmUiState.metadata
+        llmUiState.selectedModelId?.let { selectedModelId = it }
+
         hasUsdaApiKey = runCatching {
             secretKeyManager.hasApiKey(SecretKeyManager.USDA_API_KEY)
         }.getOrDefault(false)
@@ -394,20 +391,10 @@ fun UltraProcessedApp(
                                     )
                                 }
                                 val saved = secretKeyManager.saveApiKey(SecretKeyManager.LLM_API_KEY, key)
-                                hasLlmApiKey = saved &&
-                                    secretKeyManager.hasApiKey(SecretKeyManager.LLM_API_KEY)
-                                llmKeyMetadata = provider?.let { providerId ->
-                                    LlmProviderResolver.defaultModelForProvider(providerId)?.let {
-                                        KeyMetadata(
-                                            modelName = it.modelName,
-                                            provider = it.provider,
-                                            acceptsImages = it.acceptsImages,
-                                        )
-                                    }
-                                }
-                                LlmProviderResolver.defaultModelForProvider(provider)?.let { model ->
-                                    selectedModelId = model.modelId
-                                }
+                                val llmUiState = llmKeyUiStateFromSecrets(secretKeyManager)
+                                hasLlmApiKey = saved && llmUiState.hasKey
+                                llmKeyMetadata = llmUiState.metadata
+                                llmUiState.selectedModelId?.let { selectedModelId = it }
                                 if (saved) {
                                     KeySaveResult(
                                         success = true,
@@ -429,7 +416,7 @@ fun UltraProcessedApp(
                         onLlmApiKeyPing = { typedKey ->
                             val keyToPing = typedKey
                                 ?.takeIf { it.isNotBlank() }
-                                ?: secretKeyManager.getApiKey(SecretKeyManager.LLM_API_KEY).orEmpty()
+                                ?: resolveActiveLlmApiKey(secretKeyManager)
                             if (keyToPing.isBlank()) {
                                 KeySaveResult(
                                     success = false,
@@ -447,8 +434,24 @@ fun UltraProcessedApp(
                             runCatching {
                                 val deleted = secretKeyManager.deleteApiKey(SecretKeyManager.LLM_API_KEY)
                                 if (deleted) {
-                                    hasLlmApiKey = false
-                                    llmKeyMetadata = null
+                                    val llmUiState = llmKeyUiStateFromSecrets(secretKeyManager)
+                                    hasLlmApiKey = llmUiState.hasKey
+                                    llmKeyMetadata = llmUiState.metadata
+                                    llmUiState.selectedModelId?.let { selectedModelId = it }
+                                    if (!secretKeyManager.hasApiKey(SecretKeyManager.LLM_DEFAULT_API_KEY)) {
+                                        coroutineScope.launch {
+                                            bootstrapDefaultLlmKeyIfNeeded(
+                                                secretKeyManager = secretKeyManager,
+                                                bootstrapUrl = BuildConfig.LLM_BOOTSTRAP_URL,
+                                                authToken = BuildConfig.LLM_BOOTSTRAP_AUTH_TOKEN,
+                                                packageName = appContext.packageName,
+                                            )
+                                            val refreshedState = llmKeyUiStateFromSecrets(secretKeyManager)
+                                            hasLlmApiKey = refreshedState.hasKey
+                                            llmKeyMetadata = refreshedState.metadata
+                                            refreshedState.selectedModelId?.let { selectedModelId = it }
+                                        }
+                                    }
                                 }
                                 deleted
                             }.getOrDefault(false)
@@ -507,6 +510,61 @@ private fun decodeBootstrapSecret(encoded: String): String {
     return runCatching {
         String(Base64.getDecoder().decode(normalized), Charsets.UTF_8).trim()
     }.getOrDefault("")
+}
+
+private data class LlmKeyUiState(
+    val hasKey: Boolean,
+    val metadata: KeyMetadata?,
+    val selectedModelId: String?,
+)
+
+private suspend fun bootstrapDefaultLlmKeyIfNeeded(
+    secretKeyManager: SecretKeyManager,
+    bootstrapUrl: String,
+    authToken: String,
+    packageName: String,
+) {
+    if (secretKeyManager.hasApiKey(SecretKeyManager.LLM_API_KEY)) {
+        return
+    }
+    if (secretKeyManager.hasApiKey(SecretKeyManager.LLM_DEFAULT_API_KEY)) {
+        return
+    }
+
+    val url = bootstrapUrl.trim()
+    if (url.isBlank()) {
+        return
+    }
+
+    runCatching {
+        LlmBootstrapClient(
+            bootstrapUrl = url,
+            authToken = authToken,
+            packageName = packageName,
+        ).fetchDefaultApiKey().getOrNull()
+    }.getOrNull()?.let { apiKey ->
+        secretKeyManager.saveApiKey(SecretKeyManager.LLM_DEFAULT_API_KEY, apiKey)
+    }
+}
+
+private fun llmKeyUiStateFromSecrets(secretKeyManager: SecretKeyManager): LlmKeyUiState {
+    val activeKey = resolveActiveLlmApiKey(secretKeyManager)
+    val provider = LlmProviderResolver.detectProvider(activeKey)
+    val metadata = provider?.let { providerId ->
+        LlmProviderResolver.defaultModelForProvider(providerId)?.let {
+            KeyMetadata(
+                modelName = it.modelName,
+                provider = it.provider,
+                acceptsImages = it.acceptsImages,
+            )
+        }
+    }
+    val modelId = provider?.let { LlmProviderResolver.defaultModelForProvider(it)?.modelId }
+    return LlmKeyUiState(
+        hasKey = hasAnyLlmApiKey(secretKeyManager),
+        metadata = metadata,
+        selectedModelId = modelId,
+    )
 }
 
 private fun ScanResultUi.toScanResultEntity(): ScanResultEntity =

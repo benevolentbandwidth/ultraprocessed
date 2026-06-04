@@ -1,0 +1,20 @@
+{
+  "name": "zest-bootstrap-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud Run bootstrap API for Zest default LLM keys via GCP Secret Manager",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google-cloud/secret-manager": "^6.0.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0"
+  }
+}

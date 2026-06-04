@@ -39,6 +39,7 @@ class SecretKeyManager(context: Context) {
 
     companion object {
         const val LLM_API_KEY: String = "llm_api_key"
+        const val LLM_DEFAULT_API_KEY: String = "llm_default_api_key"
         const val USDA_API_KEY: String = "usda_api_key"
     }
 }
