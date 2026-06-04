@@ -16,6 +16,7 @@ If you are not an Android developer, start with [00-android-app-guide.md](00-and
 - [07-testing-release.md](07-testing-release.md) - debug tests, release verification, and hardening checklist.
 - [08-llm-api-contracts.md](08-llm-api-contracts.md) - exact LLM request flow, response classes, deterministic parameters, and retry semantics.
 - [09-todo-roadmap.md](09-todo-roadmap.md) - engineering and product backlog, including centralized navigation stack work for v2.
+- [../backend/README.md](../backend/README.md) - Cloud Run bootstrap API that serves the default Gemini key from GCP Secret Manager.
 
 ## Current Product Contract
 

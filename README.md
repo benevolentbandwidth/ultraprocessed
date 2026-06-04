@@ -150,4 +150,5 @@ If the app fails to analyze a label:
 - Repository: https://github.com/benevolentbandwidth/ultraprocessed
 - License: [LICENSE/LICENSE.md](LICENSE/LICENSE.md)
 - Technical documentation: [documentation/README.md](documentation/README.md)
+- Bootstrap API (Cloud Run): [backend/README.md](backend/README.md)
 - Non-Android architecture guide: [documentation/00-android-app-guide.md](documentation/00-android-app-guide.md)
