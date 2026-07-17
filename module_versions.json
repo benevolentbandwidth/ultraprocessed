@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "product": "Zest",
-  "releaseVersion": "1.0.2",
+  "releaseVersion": "1.0.4",
   "modules": [
     {
       "id": "android-app",
@@ -14,7 +14,7 @@
       "id": "backend-proxy",
       "kind": "cloud-run-service",
       "path": "backend",
-      "version": "1.0.2",
+      "version": "1.0.4",
       "runtimeSurface": "FastAPI app.version and GET /version"
     },
     {
@@ -91,7 +91,7 @@
       "id": "documentation",
       "kind": "repo-documentation",
       "path": "documentation",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "runtimeSurface": "repo documentation and handoff docs"
     },
     {
